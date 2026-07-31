@@ -981,6 +981,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     const processShortfallMap = new Map<number, {
       processStockId: number; name: string; sku: string | null;
       shortfall: number; supplierId: number | null; supplierName: string | null;
+      supplierEmail: string | null; orderItemIds: number[];
     }>();
 
     const finishIds = [...new Set(items.map(i => i.finishId).filter(Boolean))] as number[];
@@ -1004,6 +1005,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
               id: processStockTable.id, name: processStockTable.name, sku: processStockTable.sku,
               stockQuantity: processStockTable.stockQuantity,
               supplierId: processStockTable.supplierId, supplierName: suppliersTable.name,
+              supplierEmail: suppliersTable.email,
             })
             .from(processStockTable)
             .leftJoin(suppliersTable, eq(processStockTable.supplierId, suppliersTable.id))
@@ -1030,13 +1032,16 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
               remainingPs.set(psId, available - used);
               if (shortfall > 0) {
                 const existing = processShortfallMap.get(psId);
+                const ps = psMap.get(psId);
                 processShortfallMap.set(psId, {
                   processStockId: psId,
-                  name: psMap.get(psId)?.name ?? "Unknown",
-                  sku: psMap.get(psId)?.sku ?? null,
+                  name: ps?.name ?? "Unknown",
+                  sku: ps?.sku ?? null,
                   shortfall: (existing?.shortfall ?? 0) + shortfall,
-                  supplierId: psMap.get(psId)?.supplierId ?? null,
-                  supplierName: psMap.get(psId)?.supplierName ?? null,
+                  supplierId: ps?.supplierId ?? null,
+                  supplierName: ps?.supplierName ?? null,
+                  supplierEmail: (ps as any)?.supplierEmail ?? null,
+                  orderItemIds: [...(existing?.orderItemIds ?? []), item.id],
                 });
               }
             }
@@ -1053,6 +1058,89 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         }
       }
     }
+
+    // ── Auto-create draft process stock POs (e.g. DTF prints to Raptor) ───────
+    // Group shortfall entries by supplier and create one draft PO per supplier,
+    // with one PO line per (process_stock × order_item) combination.
+    // Idempotency: skip if a draft process stock PO already exists for this order + supplier.
+    const autoCreatedProcessStockPos: string[] = [];
+    if (processShortfallMap.size > 0) {
+      // Group by supplier
+      const psPoMap = new Map<string, {
+        supplierId: number | null; supplierName: string; supplierEmail: string | null;
+        entries: Array<{ processStockId: number; name: string; sku: string | null; shortfall: number; orderItemIds: number[] }>;
+      }>();
+      for (const entry of processShortfallMap.values()) {
+        const key = String(entry.supplierId ?? "unknown");
+        if (!psPoMap.has(key)) {
+          psPoMap.set(key, { supplierId: entry.supplierId, supplierName: entry.supplierName ?? "Unknown Supplier", supplierEmail: entry.supplierEmail, entries: [] });
+        }
+        psPoMap.get(key)!.entries.push(entry);
+      }
+
+      for (const group of psPoMap.values()) {
+        // Idempotency: skip if a draft process stock PO already exists for this order + supplier
+        const existing = await db.execute(sql`
+          SELECT poi.po_id FROM purchase_order_items poi
+          JOIN purchase_orders po ON po.id = poi.po_id
+          WHERE poi.order_id = ${params.data.id}
+            AND po.supplier_id ${group.supplierId != null ? sql`= ${group.supplierId}` : sql`IS NULL`}
+            AND poi.process_stock_id IS NOT NULL
+            AND po.status = 'draft'
+          LIMIT 1
+        `);
+        if ((existing.rows as any[]).length > 0) continue;
+
+        // Generate PO number
+        const now = new Date();
+        const poNumber = `PO-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${Math.floor(Math.random() * 9000) + 1000}`;
+
+        const [psPo] = await db.insert(purchaseOrdersTable).values({
+          poNumber,
+          supplierId: group.supplierId,
+          supplierName: group.supplierName,
+          supplierEmail: group.supplierEmail ?? null,
+          status: "draft",
+          notes: `Auto-created from order ${order.orderNumber} confirmation — DTF prints required`,
+        }).returning();
+
+        // One PO line per order_item × process_stock combination
+        for (const entry of group.entries) {
+          for (const orderItemId of entry.orderItemIds) {
+            const orderItem = items.find(i => i.id === orderItemId);
+            await db.insert(purchaseOrderItemsTable).values({
+              poId: psPo.id,
+              processStockId: entry.processStockId,
+              orderItemId,
+              orderId: params.data.id,
+              orderNumber: order.orderNumber,
+              productName: entry.name,
+              supplierCode: entry.sku ?? null,
+              quantityOrdered: orderItem?.quantity ?? 1,
+              quantityDelivered: 0,
+              sourceOrderItemIds: [orderItemId],
+            });
+          }
+        }
+
+        // Attach print files from process_stock records
+        const psIds2 = group.entries.map(e => e.processStockId);
+        const psFileRows = await db.execute(sql`
+          SELECT id, name, file_url FROM process_stock
+          WHERE id = ANY(ARRAY[${sql.raw(psIds2.join(","))}]::integer[])
+            AND file_url IS NOT NULL
+        `);
+        const attachments = (psFileRows.rows as any[])
+          .filter(r => r.file_url)
+          .map(r => ({ name: `${r.name} - Print File`, objectPath: r.file_url as string }));
+        if (attachments.length > 0) {
+          await db.update(purchaseOrdersTable).set({ attachments }).where(eq(purchaseOrdersTable.id, psPo.id));
+        }
+
+        autoCreatedProcessStockPos.push(poNumber);
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
 
     // Group process shortfalls by supplier
     const psGroupMap = new Map<string, { supplierName: string; supplierId: number | null; items: Array<{ name: string; sku: string | null; shortfall: number }> }>();
@@ -1260,6 +1348,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       allocation: { allocated: allocatedLines, purchaseRequired: purchaseLines },
       shortfallGroups,
       processShortfallGroups,
+      autoCreatedProcessStockPos,
       unlinkedItems,
       emailConfigured: isEmailConfigured,
       stripeCharge,

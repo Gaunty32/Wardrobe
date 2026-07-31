@@ -68,6 +68,7 @@ interface AllocationResult {
   allocation: { allocated: number; purchaseRequired: number };
   shortfallGroups: ShortfallGroup[];
   processShortfallGroups: ProcessShortfallGroup[];
+  autoCreatedProcessStockPos: string[];
   unlinkedItems: number;
   emailConfigured: boolean;
   stripeCharge?: { success: boolean; paymentIntentId?: string; cardLast4?: string; error?: string } | null;
@@ -614,12 +615,12 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
                 ))}
               </div>
 
-              {/* Process stock shortfalls */}
+              {/* Process stock shortfalls — auto-created POs */}
               {(result.processShortfallGroups ?? []).length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-1.5 text-sm font-medium text-blue-700">
                     <Package className="w-4 h-4" />
-                    Process materials to order
+                    Process materials (e.g. DTF prints)
                   </div>
                   {result.processShortfallGroups.map((group) => (
                     <div key={group.supplierName} className="rounded-lg border border-blue-200 bg-blue-50/40 p-3 space-y-1.5">
@@ -638,7 +639,16 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
                           </li>
                         ))}
                       </ul>
-                      <p className="text-xs text-blue-600/80 pt-0.5">Order these separately via Purchasing → Process Stock.</p>
+                      {(result.autoCreatedProcessStockPos ?? []).length > 0 ? (
+                        <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1 mt-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          Draft PO auto-created: <span className="font-semibold">{result.autoCreatedProcessStockPos.join(", ")}</span> — open Purchasing to review and send.
+                        </div>
+                      ) : (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+                          ⚠ Could not auto-create PO — raise it manually in Purchasing → Process Stock.
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
