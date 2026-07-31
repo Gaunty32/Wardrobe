@@ -650,7 +650,7 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
                    gallery_images, size_guide_html, price_breaks,
                    guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
                    guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
-                   guidance_staff_recommendation, branding_positions_override
+                   guidance_staff_recommendation, guidance_staff_quotes, branding_positions_override
             FROM products
             WHERE id = ${numericId} AND is_archived = false
             LIMIT 1
@@ -661,7 +661,7 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
                    gallery_images, size_guide_html, price_breaks,
                    guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
                    guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
-                   guidance_staff_recommendation, branding_positions_override
+                   guidance_staff_recommendation, guidance_staff_quotes, branding_positions_override
             FROM products
             WHERE LOWER(REGEXP_REPLACE(TRIM(BOTH '-' FROM REGEXP_REPLACE(name, '[^a-zA-Z0-9]+', '-', 'g')), '^-+|-+$', '', 'g')) = ${raw}
               AND is_archived = false
@@ -836,6 +836,15 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
         bestFor:          p.guidance_best_for          ?? "",
         notIdealFor:      p.guidance_not_ideal_for     ?? "",
         staffRecommendation: p.guidance_staff_recommendation ?? "",
+        staffQuotes: (() => {
+          const raw: any[] = Array.isArray(p.guidance_staff_quotes) ? p.guidance_staff_quotes : [];
+          return raw.map((q: any) => ({
+            name:     (q.staffName ?? q.name ?? "").trim(),
+            role:     (q.staffRole ?? q.role ?? "").trim(),
+            imageUrl: (q.staffImageUrl ?? q.imageUrl ?? null) as string | null,
+            quote:    (q.rewritten ?? q.draft ?? "").trim(),
+          })).filter((q: any) => q.quote);
+        })(),
       },
       // Per-product branding override: null = use global defaults, [] = no branding, [...] = custom positions
       brandingPositionsOverride: (() => {

@@ -110,13 +110,18 @@ function StarRating({ value, max = 5 }: { value: number; max?: number }) {
 
 function GuidancePanel({ guidance }: { guidance: any }) {
   if (!guidance) return null;
-  const { valueRating, durabilityRating, technicalRating, badges, tags, bestFor, notIdealFor, staffRecommendation } = guidance;
-  const hasRatings  = valueRating > 0 || durabilityRating > 0 || technicalRating > 0;
-  const hasBadges   = badges?.length > 0;
-  const hasTags     = tags?.length > 0;
-  const hasBestFor  = bestFor?.trim();
-  const hasNIF      = notIdealFor?.trim();
-  const hasStaffRec = staffRecommendation?.trim();
+  const { valueRating, durabilityRating, technicalRating, badges, tags, bestFor, notIdealFor, staffRecommendation, staffQuotes } = guidance;
+  const hasRatings   = valueRating > 0 || durabilityRating > 0 || technicalRating > 0;
+  const hasBadges    = badges?.length > 0;
+  const hasTags      = tags?.length > 0;
+  const hasBestFor   = bestFor?.trim();
+  const hasNIF       = notIdealFor?.trim();
+  // Prefer structured staff quotes (with photos) over legacy plain text field
+  const quotesArr: { name: string; role: string; imageUrl: string | null; quote: string }[] =
+    Array.isArray(staffQuotes) && staffQuotes.length > 0
+      ? staffQuotes
+      : (staffRecommendation?.trim() ? [{ name: '', role: '', imageUrl: null, quote: staffRecommendation.trim() }] : []);
+  const hasStaffRec  = quotesArr.length > 0;
   if (!hasRatings && !hasBadges && !hasTags && !hasBestFor && !hasNIF && !hasStaffRec) return null;
 
   return (
@@ -216,11 +221,29 @@ function GuidancePanel({ guidance }: { guidance: any }) {
       {hasStaffRec && (
         <div className="rounded-2xl border border-blue-200 bg-blue-50/50 overflow-hidden">
           <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-blue-200">
-            <span className="text-base">👤</span>
-            <span className="text-sm font-bold text-blue-800">Staff Recommendation</span>
+            <span className="text-[11px]">💬</span>
+            <span className="text-xs font-bold text-blue-800 uppercase tracking-widest">Staff Recommendations</span>
           </div>
-          <div className="px-4 py-3 text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-            {staffRecommendation.trim()}
+          <div className="divide-y divide-blue-100">
+            {quotesArr.map((q, i) => (
+              <div key={i} className="flex items-start gap-4 px-4 py-4">
+                {/* Avatar */}
+                <div className="shrink-0 flex flex-col items-center text-center w-16">
+                  <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-primary/30 bg-primary/10 flex items-center justify-center mb-1.5">
+                    {q.imageUrl
+                      ? <img src={q.imageUrl} alt={q.name} className="w-full h-full object-cover object-top" />
+                      : <span className="text-xl font-bold text-primary">{(q.name || '?')[0].toUpperCase()}</span>
+                    }
+                  </div>
+                  {q.name && <p className="text-[11px] font-bold text-gray-800 leading-tight">{q.name}</p>}
+                  {q.role && <p className="text-[10px] text-gray-500 leading-tight">{q.role}</p>}
+                </div>
+                {/* Quote */}
+                <blockquote className="flex-1 text-sm text-gray-700 leading-relaxed italic border-l-4 border-primary/40 pl-3 py-1">
+                  "{q.quote}"
+                </blockquote>
+              </div>
+            ))}
           </div>
         </div>
       )}

@@ -37,14 +37,14 @@ export default function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
   const { data: shopImages } = useShopImages();
 
-  // Pick 3 distinct hero images from the featured list
-  const heroImages: string[] = (() => {
+  // Pick 2 distinct product images from the featured list (slides 1 & 2 use these after the team shot)
+  const productHeroImages: string[] = (() => {
     const featured = shopImages?.featured ?? [];
     const seen = new Set<string>();
     const picked: string[] = [];
     for (const img of featured) {
       if (!seen.has(img.url)) { seen.add(img.url); picked.push(img.url); }
-      if (picked.length === 3) break;
+      if (picked.length === 2) break;
     }
     return picked;
   })();
@@ -70,7 +70,10 @@ export default function Home() {
       {/* Hero Slider */}
       <section className="relative h-[600px] w-full overflow-hidden bg-gray-900">
         {SLIDE_COPY.map((slide, index) => {
-          const imgSrc = heroImages[index] ?? heroImages[0] ?? null;
+          // First slide always shows the team photo; subsequent slides use product images
+          const imgSrc = index === 0
+            ? `${import.meta.env.BASE_URL}the-team.jpg`
+            : (productHeroImages[index - 1] ?? null);
           return (
             <div
               key={index}
@@ -83,6 +86,7 @@ export default function Home() {
                   src={imgSrc}
                   alt={slide.title}
                   className="absolute inset-0 w-full h-full object-cover opacity-50"
+                  style={index === 0 ? { objectPosition: 'center 20%' } : undefined}
                 />
               )}
               <div className="absolute inset-0 bg-gradient-to-r from-gray-900/80 via-gray-900/50 to-transparent" />

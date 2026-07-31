@@ -3084,4 +3084,27 @@ export async function refreshProductIssues(): Promise<void> {
     `);
     console.log("[startup] O311 reverted from shipped → confirmed (dispatched_at was null)");
   }
+
+  // ── Seed shop team members if not already set ─────────────────────────────
+  // Ensures the About Us page shows the team on first production boot
+  const teamSetting = await db.execute(sql`
+    SELECT value FROM settings WHERE key = 'shop_team_members'
+  `);
+  const existingTeam = (teamSetting.rows as any[])[0]?.value;
+  if (!existingTeam || existingTeam === '[]' || existingTeam === 'null') {
+    const defaultTeam = JSON.stringify([
+      { name: "James",  role: "Sales Manager",           photoUrl: "https://www.selectuniforms.co.uk/wp-content/uploads/JAMES.jpg",   email: "james@selectbranding.co.uk",  phone: "+441132552694" },
+      { name: "Chris",  role: "Marketing Manager",        photoUrl: "https://www.selectuniforms.co.uk/wp-content/uploads/CHRIS.jpg",   email: "chris@selectbranding.co.uk",  phone: "+441132552694" },
+      { name: "Tim",    role: "Logistics Manager",         photoUrl: "https://www.selectuniforms.co.uk/wp-content/uploads/TIM.jpg",    email: "info@selectbranding.co.uk",   phone: "+441132552694" },
+      { name: "Anna",   role: "Production Team Manager",   photoUrl: "https://www.selectuniforms.co.uk/wp-content/uploads/ANNA.jpg",   email: "anna@selectbranding.co.uk",   phone: "+441132552694" },
+      { name: "Maggie", role: "Production Team Manager",   photoUrl: "https://www.selectuniforms.co.uk/wp-content/uploads/MAGGIE.jpg", email: "maggie@selectbranding.co.uk", phone: "+441132552694" },
+      { name: "Mollie", role: "Print Manager",             photoUrl: "https://www.selectuniforms.co.uk/wp-content/uploads/MOLLIEE.jpg",email: "mollie@selectbranding.co.uk", phone: "+441132552694" },
+    ]);
+    await db.execute(sql`
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ('shop_team_members', ${defaultTeam}, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `);
+    console.log("[startup] shop_team_members seeded with 6 members");
+  }
 }
