@@ -1526,6 +1526,23 @@ export default function Settings() {
     }
   }, [toast]);
 
+  // Reviews refresh
+  const [reviewsRefreshing, setReviewsRefreshing] = useState(false);
+  const [reviewsRefreshResult, setReviewsRefreshResult] = useState<{ count: number } | null>(null);
+  const handleRefreshReviews = useCallback(async () => {
+    setReviewsRefreshing(true);
+    setReviewsRefreshResult(null);
+    try {
+      const result = await apiFetch<{ ok: boolean; count: number }>("/shop/reviews/refresh", { method: "POST" });
+      setReviewsRefreshResult({ count: result.count });
+      toast({ title: "Reviews refreshed", description: `${result.count} review${result.count !== 1 ? "s" : ""} loaded.` });
+    } catch (err: any) {
+      toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
+    } finally {
+      setReviewsRefreshing(false);
+    }
+  }, [toast]);
+
   // Image migration from WordPress
   const [imageMigrating, setImageMigrating] = useState(false);
   const [wpDirectIp, setWpDirectIp] = useState("213.165.231.127");
@@ -3360,6 +3377,35 @@ export default function Settings() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Refresh Reviews card */}
+              <div className="bg-card border border-border/50 rounded-lg p-6 shadow-sm space-y-4">
+                <div>
+                  <h2 className="font-semibold text-base flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 text-amber-600" /> Shop Reviews
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Reviews from Google and Facebook are cached for 6 hours. Click here to force an immediate refresh — useful after connecting a new account or fixing a connection issue.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    variant="outline"
+                    onClick={handleRefreshReviews}
+                    disabled={reviewsRefreshing}
+                    className="gap-2"
+                  >
+                    {reviewsRefreshing
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Refreshing…</>
+                      : <><RefreshCw className="w-4 h-4" />Refresh Reviews</>}
+                  </Button>
+                  {reviewsRefreshResult && !reviewsRefreshing && (
+                    <span className="text-sm text-green-700 font-medium flex items-center gap-1">
+                      <CheckCircle className="w-4 h-4" /> {reviewsRefreshResult.count} review{reviewsRefreshResult.count !== 1 ? "s" : ""} loaded
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Test post card */}
