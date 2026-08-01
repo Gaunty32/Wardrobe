@@ -80,60 +80,14 @@ async function fetchGoogleReviews(): Promise<Review[]> {
 
   if (!locationName) return [];
 
-  // If the stored location name is a bare number (manually entered from the URL),
-  // resolve it to the full accounts/.../locations/... resource name via the API.
-  // We use a cached account name to avoid hitting the account-management API quota
-  // on every refresh — only fall back to listing accounts when we have no cached name.
+  // If the stored location name is a bare number, use the accounts/- wildcard path.
+  // The Reviews API accepts accounts/-/locations/{id} and resolves it server-side,
+  // completely avoiding the low-quota Account Management API.
+  // After a successful fetch we extract the real account name from the returned
+  // review resource names and persist it so future calls use the canonical path.
   if (!locationName.includes("/")) {
-    // Check if we already know the account name (cached from a previous resolution)
-    const cachedAccountName = await getSetting("gbp_account_name");
-    if (cachedAccountName) {
-      locationName = `${cachedAccountName}/locations/${locationName}`;
-      await setSetting("gbp_location_name", locationName);
-      console.log(`[reviews] Constructed GBP location path from cached account: ${locationName}`);
-    } else {
-      // Before calling the accounts API, honour any quota backoff
-      const retryAfter = parseInt(await getSetting("gbp_location_resolve_retry_after") ?? "0");
-      if (Date.now() < retryAfter) {
-        console.warn(`[reviews] GBP location resolution on backoff until ${new Date(retryAfter).toISOString()} — skipping Google reviews.`);
-        return [];
-      }
-
-      try {
-        console.log(`[reviews] Location name "${locationName}" is not a full resource path — resolving via API…`);
-        const locations = await listGbpLocations(token);
-        const match = locations.find(l => l.name.endsWith(`/${locationName}`)) ?? (locations.length === 1 ? locations[0] : null);
-        if (match) {
-          locationName = match.name;
-          // Cache the account portion so we never need to list accounts again
-          const accountName = locationName.split("/locations/")[0];
-          await Promise.all([
-            setSetting("gbp_location_name", locationName),
-            setSetting("gbp_account_name", accountName),
-          ]);
-          console.log(`[reviews] Resolved GBP location to: ${locationName} (account cached)`);
-        } else if (locations.length > 0) {
-          locationName = locations[0].name;
-          const accountName = locationName.split("/locations/")[0];
-          await Promise.all([
-            setSetting("gbp_location_name", locationName),
-            setSetting("gbp_location_title", locations[0].title),
-            setSetting("gbp_account_name", accountName),
-          ]);
-          console.warn(`[reviews] Could not match location ID — falling back to first location: ${locationName}`);
-        } else {
-          console.warn("[reviews] No GBP locations found during resolution — skipping Google reviews.");
-          return [];
-        }
-      } catch (err) {
-        const msg = (err as Error).message ?? "";
-        const isQuota = msg.includes("Quota") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED");
-        // Back off for 30 minutes on quota errors to avoid hammering the API
-        await setSetting("gbp_location_resolve_retry_after", String(Date.now() + (isQuota ? 30 : 5) * 60_000));
-        console.warn("[reviews] Could not resolve GBP location name — skipping Google reviews:", msg);
-        return [];
-      }
-    }
+    locationName = `accounts/-/locations/${locationName}`;
+    console.log(`[reviews] Using wildcard path: ${locationName}`);
   }
 
   // Fetch location metadata (newReviewUri) and reviews in parallel
@@ -164,6 +118,23 @@ async function fetchGoogleReviews(): Promise<Review[]> {
       return [];
     }
     const data: any = await reviewsRes.json();
+
+    // If we used the wildcard accounts/- path, extract the real account name from
+    // the first returned review resource name (e.g. accounts/123/locations/456/reviews/789)
+    // and persist the canonical location path so future calls are direct.
+    if (locationName.startsWith("accounts/-/") && (data.reviews ?? []).length > 0) {
+      const sampleName: string = data.reviews[0].name ?? "";
+      const locPart = sampleName.split("/reviews/")[0]; // accounts/123/locations/456
+      if (locPart?.includes("/locations/")) {
+        const accountPart = locPart.split("/locations/")[0];
+        await Promise.all([
+          setSetting("gbp_location_name", locPart),
+          setSetting("gbp_account_name", accountPart),
+        ]);
+        console.log(`[reviews] Resolved wildcard → persisted canonical location: ${locPart}`);
+      }
+    }
+
     const reviews: Review[] = [];
     for (const r of (data.reviews ?? [])) {
       if (!r.comment?.trim()) continue;   // skip no-text reviews

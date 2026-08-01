@@ -3116,19 +3116,36 @@ export default function Settings() {
                         <Globe className="w-4 h-4" /> Load Locations
                       </Button>
                     )}
-                    {/* Warn when location is stored as a bare number — needs re-selection to get the full path */}
+                    {/* Warn when location is stored as a bare number — fix with one API call, no quota hit */}
                     {gbpStatus.locationName && !gbpStatus.locationName.includes("/") && !gbpShowLocationSelector && (
                       <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                         <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <strong>Google reviews not loading.</strong>{" "}
-                          The saved location ID (<code>{gbpStatus.locationName}</code>) is a bare number — the system needs the full account path to fetch reviews.
-                          Click <strong>Re-select Location</strong> below to fix this permanently.
-                          <div className="mt-2">
-                            <Button size="sm" variant="outline" className="gap-1.5 border-amber-400 text-amber-800 hover:bg-amber-100" onClick={() => setGbpShowLocationSelector(true)}>
-                              <RefreshCw className="w-3 h-3" /> Re-select Location
-                            </Button>
-                          </div>
+                        <div className="space-y-2">
+                          <p>
+                            <strong>Google reviews not loading.</strong>{" "}
+                            The saved location ID (<code>{gbpStatus.locationName}</code>) needs resolving to a full account path.
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5 border-amber-400 text-amber-800 hover:bg-amber-100"
+                            disabled={savingGbp}
+                            onClick={async () => {
+                              setSavingGbp(true);
+                              try {
+                                await apiFetch("/gbp/fix-location", { method: "POST" });
+                                toast({ title: "Location resolved", description: "Google reviews will load on the next refresh." });
+                                queryClient.invalidateQueries({ queryKey: ["gbp-status"] });
+                              } catch (e: any) {
+                                toast({ title: "Could not resolve location", description: e?.message ?? "Check the API server logs.", variant: "destructive" });
+                              } finally {
+                                setSavingGbp(false);
+                              }
+                            }}
+                          >
+                            {savingGbp ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                            Fix Location Automatically
+                          </Button>
                         </div>
                       </div>
                     )}

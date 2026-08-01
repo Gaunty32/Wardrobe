@@ -667,6 +667,57 @@ router.post("/gbp/location", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+// POST /gbp/fix-location
+// Tests the stored bare location ID against the Reviews API using the accounts/-
+// wildcard — no Account Management API call, no quota hit.  On success, extracts
+// and persists the canonical accounts/.../locations/... path automatically.
+router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
+  let token: string | null;
+  try { token = await getGbpAccessToken(); } catch { token = null; }
+  if (!token) { res.status(400).json({ error: "Not authenticated with Google" }); return; }
+
+  const locationId = await getSetting("gbp_location_name");
+  if (!locationId) { res.status(400).json({ error: "No location ID stored" }); return; }
+
+  // Already a full path — nothing to fix
+  if (locationId.includes("/locations/")) {
+    res.json({ ok: true, locationName: locationId, alreadyResolved: true });
+    return;
+  }
+
+  const wildcardPath = `accounts/-/locations/${locationId.replace(/^.*\//, "")}`;
+  try {
+    const reviewsRes = await fetch(
+      `https://mybusinessreviews.googleapis.com/v1/${wildcardPath}/reviews?pageSize=1`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
+    );
+    if (!reviewsRes.ok) {
+      const err = await reviewsRes.text();
+      res.status(400).json({ error: `Reviews API: ${err.slice(0, 300)}` });
+      return;
+    }
+    const data: any = await reviewsRes.json();
+    // Extract canonical path from first review's resource name, e.g.
+    // accounts/123456/locations/789/reviews/abc → accounts/123456/locations/789
+    let canonicalLocation = wildcardPath;
+    const firstReview = (data.reviews ?? [])[0];
+    if (firstReview?.name?.includes("/locations/")) {
+      canonicalLocation = (firstReview.name as string).split("/reviews/")[0];
+    }
+    const accountPart = canonicalLocation.split("/locations/")[0];
+    await Promise.all([
+      setSetting("gbp_location_name", canonicalLocation),
+      setSetting("gbp_account_name", accountPart),
+      setSetting("gbp_location_resolve_retry_after", "0"),
+    ]);
+    invalidateLocationsCache();
+    console.log(`[GBP] fix-location: resolved ${locationId} → ${canonicalLocation}`);
+    res.json({ ok: true, locationName: canonicalLocation });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 router.post("/gbp/disconnect", async (_req, res): Promise<void> => {
   await disconnectGbp();
   res.json({ ok: true });
