@@ -3266,34 +3266,42 @@ export async function refreshProductIssues(): Promise<void> {
     }
   }
 
-  // ── Clear dead WordPress photo URLs from shop_team_members ──────────────────
+  // ── Restore WordPress photo URLs that were incorrectly cleared ───────────────
   {
-    const flagKey = "cleared_wordpress_team_photo_urls";
+    const flagKey = "restored_wordpress_team_photo_urls_v1";
     const already = await db.execute(sql`SELECT 1 FROM _migration_flags WHERE name = ${flagKey}`);
     if ((already.rows as any[]).length === 0) {
       try {
+        const knownPhotos: Record<string, string> = {
+          James:  "https://www.selectuniforms.co.uk/wp-content/uploads/JAMES.jpg",
+          Chris:  "https://www.selectuniforms.co.uk/wp-content/uploads/CHRIS.jpg",
+          Tim:    "https://www.selectuniforms.co.uk/wp-content/uploads/TIM.jpg",
+          Anna:   "https://www.selectuniforms.co.uk/wp-content/uploads/ANNA.jpg",
+          Maggie: "https://www.selectuniforms.co.uk/wp-content/uploads/MAGGIE.jpg",
+          Mollie: "https://www.selectuniforms.co.uk/wp-content/uploads/MOLLIEE.jpg",
+        };
         const raw = await db.execute(sql`SELECT value FROM settings WHERE key = 'shop_team_members'`);
         const rawVal: string = (raw.rows as any[])[0]?.value ?? "[]";
         const members: any[] = JSON.parse(rawVal);
         let changed = false;
-        const cleaned = members.map((m: any) => {
-          if (m.photoUrl && (m.photoUrl as string).includes("selectuniforms.co.uk")) {
+        const restored = members.map((m: any) => {
+          if ((!m.photoUrl || m.photoUrl === "") && knownPhotos[m.name]) {
             changed = true;
-            return { ...m, photoUrl: "" };
+            return { ...m, photoUrl: knownPhotos[m.name] };
           }
           return m;
         });
         if (changed) {
           await db.execute(sql`
             INSERT INTO settings (key, value, updated_at)
-            VALUES ('shop_team_members', ${JSON.stringify(cleaned)}, NOW())
+            VALUES ('shop_team_members', ${JSON.stringify(restored)}, NOW())
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
           `);
-          console.log("[startup] Cleared dead WordPress photo URLs from shop_team_members");
+          console.log("[startup] Restored WordPress photo URLs for shop_team_members");
         }
         await db.execute(sql`INSERT INTO _migration_flags (name) VALUES (${flagKey}) ON CONFLICT DO NOTHING`);
       } catch (err) {
-        console.warn("[startup] Failed to clear WordPress photo URLs:", (err as Error).message);
+        console.warn("[startup] Failed to restore team photo URLs:", (err as Error).message);
       }
     }
   }
