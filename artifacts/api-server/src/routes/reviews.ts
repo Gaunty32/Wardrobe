@@ -81,39 +81,15 @@ async function fetchGoogleReviews(): Promise<Review[]> {
   if (!locationName) return [];
 
   // The Reviews API requires the full accounts/{accountId}/locations/{locationId} path.
-  // Neither accounts/-/locations/{id} (wildcard) nor locations/{id} (short form) are
-  // accepted — only the explicit account ID works.  If the stored value isn't already
-  // in the correct form, call the Account Management API to discover it.
+  // Neither the accounts/-/locations/{id} wildcard nor the short locations/{id} form work.
+  // If the stored value isn't already the canonical form, skip Google reviews and log a
+  // warning — the Account Management API quota is too precious to spend here.
+  // Staff should click "Fix Location Automatically" in Settings → Social Media once to
+  // resolve the path; after that it is stored permanently and this check passes.
   const isFullPath = locationName.startsWith("accounts/") && locationName.includes("/locations/");
   if (!isFullPath) {
-    console.warn(`[reviews] Stored location "${locationName}" is not a canonical path — attempting auto-discovery`);
-    try {
-      const locations = await listGbpLocations(token);
-      if (locations.length === 0) {
-        console.warn("[reviews] GBP has no locations accessible via the API.");
-        return [];
-      }
-      // Extract the bare numeric ID so we can match against the discovered paths
-      const bareId = locationName.includes("/locations/")
-        ? locationName.split("/locations/")[1]
-        : locationName.replace(/^locations\//, "");
-      const match =
-        locations.find(l => l.name.endsWith(`/locations/${bareId}`)) ??
-        (locations.length === 1 ? locations[0] : null);
-      if (!match) {
-        console.warn(`[reviews] Cannot match ID "${bareId}" to any of ${locations.length} locations — fix in Settings`);
-        return [];
-      }
-      locationName = match.name; // e.g. accounts/123/locations/456
-      await Promise.all([
-        setSetting("gbp_location_name", locationName),
-        setSetting("gbp_location_title", match.title),
-      ]);
-      console.log(`[reviews] Auto-resolved GBP location: ${match.title} (${locationName})`);
-    } catch (err) {
-      console.warn("[reviews] Could not auto-discover GBP location:", err);
-      return [];
-    }
+    console.warn(`[reviews] Stored GBP location "${locationName}" is not resolved yet — use "Fix Location Automatically" in Settings → Social Media.`);
+    return [];
   }
 
   // Fetch location metadata (newReviewUri) and reviews in parallel
