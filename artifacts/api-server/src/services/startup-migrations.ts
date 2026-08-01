@@ -3203,4 +3203,66 @@ export async function refreshProductIssues(): Promise<void> {
     `);
     console.log("[startup] shop_team_members seeded with 6 members");
   }
+
+  // ── Auto-resolve GBP location to full accounts/{id}/locations/{id} path ──────
+  // The Reviews API only accepts the full canonical path; neither the short
+  // locations/{id} form nor the accounts/-/locations/{id} wildcard work.
+  // We use the Business Information API (separate quota) to discover it once and
+  // save it permanently — no Account Management API calls, no user action needed.
+  {
+    const locRows = await db.execute(sql`
+      SELECT value FROM settings WHERE key = 'gbp_location_name' LIMIT 1
+    `);
+    const storedLoc: string = (locRows.rows as any[])[0]?.value ?? "";
+    const isFullPath = storedLoc.startsWith("accounts/") && storedLoc.includes("/locations/");
+    if (storedLoc && !isFullPath) {
+      try {
+        const tokenRows = await db.execute(sql`
+          SELECT value FROM settings WHERE key = 'gbp_access_token' LIMIT 1
+        `);
+        const accessToken: string = (tokenRows.rows as any[])[0]?.value ?? "";
+        const expiryRows = await db.execute(sql`
+          SELECT value FROM settings WHERE key = 'gbp_token_expires_at' LIMIT 1
+        `);
+        const expiresAt = Number((expiryRows.rows as any[])[0]?.value ?? 0);
+        const tokenValid = accessToken && Date.now() < expiresAt;
+        if (tokenValid) {
+          const bareId = storedLoc.includes("/locations/")
+            ? storedLoc.split("/locations/")[1]
+            : storedLoc.replace(/^locations\//, "");
+          const infoRes = await fetch(
+            `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${bareId}?readMask=name`,
+            { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) },
+          );
+          if (infoRes.ok) {
+            const data: any = await infoRes.json();
+            const fullName: string = data?.name ?? "";
+            if (fullName.startsWith("accounts/") && fullName.includes("/locations/")) {
+              const accountPart = fullName.split("/locations/")[0];
+              await db.execute(sql`
+                INSERT INTO settings (key, value, updated_at)
+                VALUES ('gbp_location_name', ${fullName}, NOW())
+                ON CONFLICT (key) DO UPDATE SET value = ${fullName}, updated_at = NOW()
+              `);
+              await db.execute(sql`
+                INSERT INTO settings (key, value, updated_at)
+                VALUES ('gbp_account_name', ${accountPart}, NOW())
+                ON CONFLICT (key) DO UPDATE SET value = ${accountPart}, updated_at = NOW()
+              `);
+              console.log(`[startup] GBP location auto-resolved: ${storedLoc} → ${fullName}`);
+            } else {
+              console.warn(`[startup] GBP Business Info API: unexpected name "${fullName}" — manual fix may be needed`);
+            }
+          } else {
+            const errText = await infoRes.text().catch(() => "");
+            console.warn(`[startup] GBP Business Info API returned ${infoRes.status}: ${errText.slice(0, 120)}`);
+          }
+        } else {
+          console.warn("[startup] GBP access token missing or expired — skipping location auto-resolve");
+        }
+      } catch (err) {
+        console.warn("[startup] GBP location auto-resolve failed:", (err as Error).message);
+      }
+    }
+  }
 }

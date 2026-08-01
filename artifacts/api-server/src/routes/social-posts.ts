@@ -719,24 +719,13 @@ router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
       console.warn(`[GBP] fix-location: Business Information API returned ${infoRes.status} — will try Account Management API`);
     }
 
-    // ── Strategy 2: Account Management API (fallback, quota-limited) ─────────
+    // If Business Information API didn't return a usable name, give up rather than
+    // burning Account Management API quota which is shared with auto-post scheduling.
     if (!resolvedName) {
-      const locations = await listGbpLocations(token);
-      if (locations.length === 0) {
-        res.status(400).json({ error: "No locations found on this Google account" });
-        return;
-      }
-      const match =
-        locations.find(l => l.name.endsWith(`/locations/${bareId}`)) ??
-        (locations.length === 1 ? locations[0] : null);
-      if (!match) {
-        res.status(400).json({
-          error: `Could not match ID "${bareId}" to any location. Found: ${locations.map(l => `${l.title} (${l.name})`).join(", ")}`,
-        });
-        return;
-      }
-      resolvedName = match.name;
-      console.log(`[GBP] fix-location: resolved via Account Management API → ${resolvedName}`);
+      res.status(400).json({
+        error: "Could not resolve location via Business Information API. The server will retry automatically on next restart — or try again in a few minutes.",
+      });
+      return;
     }
 
     // ── Verify against the Reviews API ───────────────────────────────────────
