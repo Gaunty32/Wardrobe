@@ -754,9 +754,45 @@ router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
         console.warn(`[GBP] fix-location: Account Management API returned ${acctRes.status}: ${acctErr.slice(0, 200)}`);
       }
     }
+    // ── Strategy 3: Legacy My Business API v4 ────────────────────────────────
+    // Separate quota from both v1 APIs above. Deprecated but still functional.
+    if (!resolvedName) {
+      console.log("[GBP] fix-location: trying legacy My Business API v4...");
+      try {
+        const v4Res = await fetch(
+          "https://mybusiness.googleapis.com/v4/accounts",
+          { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
+        );
+        if (v4Res.ok) {
+          const v4Data: any = await v4Res.json();
+          const v4Accounts: any[] = v4Data?.accounts ?? [];
+          console.log(`[GBP] fix-location: v4 returned ${v4Accounts.length} account(s)`);
+          for (const acct of v4Accounts) {
+            const acctName: string = acct.name ?? "";
+            if (!acctName.startsWith("accounts/")) continue;
+            const candidate = `${acctName}/locations/${bareId}`;
+            const probe = await fetch(
+              `https://mybusinessreviews.googleapis.com/v1/${candidate}/reviews?pageSize=1`,
+              { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
+            );
+            if (probe.ok) {
+              resolvedName = candidate;
+              console.log(`[GBP] fix-location: resolved via legacy v4 API → ${resolvedName}`);
+              break;
+            }
+          }
+        } else {
+          const v4Err = await v4Res.text();
+          console.warn(`[GBP] fix-location: legacy v4 API returned ${v4Res.status}: ${v4Err.slice(0, 200)}`);
+        }
+      } catch (v4Err) {
+        console.warn("[GBP] fix-location: legacy v4 API error:", (v4Err as Error).message);
+      }
+    }
+
     if (!resolvedName) {
       res.status(400).json({
-        error: "Could not resolve location — both APIs are currently unavailable. Please wait a minute and try again.",
+        error: "Could not resolve location — all three Google APIs are currently unavailable. Use the manual entry form below to enter your account ID.",
       });
       return;
     }
