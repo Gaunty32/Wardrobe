@@ -304,6 +304,47 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS linked_employee_id integer REFERENCES customer_employees(id) ON DELETE SET NULL;
   `);
 
+  // Fix a bad gbp_location_name that was set to a full Google Business URL instead of
+  // a location ID.  The reviews API needs either a bare numeric ID (which the resolution
+  // code will expand to the full accounts/.../locations/... path) or the full path itself.
+  const badLocation = await db.execute(sql`
+    SELECT value FROM settings
+    WHERE key = 'gbp_location_name' AND value LIKE 'http%'
+  `);
+  if ((badLocation.rows as any[]).length > 0) {
+    await db.execute(sql`
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ('gbp_location_name', '312263897416442125', NOW())
+      ON CONFLICT (key) DO UPDATE SET value = '312263897416442125', updated_at = NOW()
+    `);
+    await db.execute(sql`
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ('gbp_account_name', NULL, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = NULL, updated_at = NOW()
+    `);
+    await db.execute(sql`
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ('gbp_location_resolve_retry_after', '0', NOW())
+      ON CONFLICT (key) DO UPDATE SET value = '0', updated_at = NOW()
+    `);
+    console.log("[startup] Fixed bad gbp_location_name (was a URL) — reset to bare location ID 312263897416442125");
+  }
+
+  // Clear stale reviews cache so the updated Facebook API fields (picture instead of
+  // deprecated pic_square, plus attachments) take effect on the very next fetch.
+  const cacheVer = await db.execute(sql`SELECT value FROM settings WHERE key = 'shop_reviews_cache_version'`);
+  if ((cacheVer.rows[0] as any)?.value !== "2") {
+    await db.execute(sql`
+      INSERT INTO settings (key, value, updated_at) VALUES ('shop_reviews_cache_at', '0', NOW())
+      ON CONFLICT (key) DO UPDATE SET value = '0', updated_at = NOW()
+    `);
+    await db.execute(sql`
+      INSERT INTO settings (key, value, updated_at) VALUES ('shop_reviews_cache_version', '2', NOW())
+      ON CONFLICT (key) DO UPDATE SET value = '2', updated_at = NOW()
+    `);
+    console.log("[startup] Cleared stale reviews cache (v2: facebook picture field fix)");
+  }
+
   // Seed the Google review URL from the known Maps CID if not already set
   const existingReviewUri = await db.execute(sql`SELECT value FROM settings WHERE key = 'gbp_new_review_uri'`);
   const hasRealUri = (existingReviewUri.rows[0] as any)?.value?.includes("lrd=");

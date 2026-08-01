@@ -20,6 +20,7 @@ export interface Review {
   rating: number;   // 1-5
   text: string;
   date: string;     // ISO date string
+  mediaUrls?: string[];  // photos attached to the review
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -201,21 +202,25 @@ async function fetchFacebookReviews(): Promise<Review[]> {
     const pageTokenData: any = await pageTokenRes.json();
     const pageToken: string = pageTokenData.access_token ?? token;
 
+    // reviewer picture: pic_square was deprecated in Graph API v13+; use picture{url} instead.
+    // Response shape: reviewer.picture.data.url
     const url = `https://graph.facebook.com/v20.0/${pageId}/ratings`
-      + `?fields=reviewer{name,pic_square},rating,review_text,created_time`
+      + `?fields=reviewer{name,picture{url}},rating,review_text,created_time`
       + `&limit=50&access_token=${encodeURIComponent(pageToken)}`;
 
     const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       const err = await res.text();
-      console.warn(`[reviews] Facebook ratings fetch failed (${res.status}): ${err.slice(0, 200)}`);
+      console.warn(`[reviews] Facebook ratings fetch failed (${res.status}): ${err.slice(0, 300)}`);
       return [];
     }
     const data: any = await res.json();
     if (data.error) {
-      console.warn(`[reviews] Facebook ratings error: ${data.error.message}`);
+      console.warn(`[reviews] Facebook ratings error: ${JSON.stringify(data.error)}`);
       return [];
     }
+    // Log the first raw entry so we can confirm what fields Facebook actually returns
+    console.log(`[reviews] Facebook raw sample:`, JSON.stringify(data.data?.[0] ?? {}).slice(0, 500));
     const reviews: Review[] = [];
     for (const r of (data.data ?? [])) {
       if (!r.review_text?.trim()) continue;
@@ -223,7 +228,10 @@ async function fetchFacebookReviews(): Promise<Review[]> {
         id:          `facebook-${r.created_time ?? Math.random()}`,
         source:      "facebook",
         author:      r.reviewer?.name ?? "Facebook User",
-        authorPhoto: r.reviewer?.pic_square,
+        // picture{url} returns { data: { url, width, height, is_silhouette } }
+        authorPhoto: r.reviewer?.picture?.data?.is_silhouette === false
+          ? r.reviewer?.picture?.data?.url
+          : undefined,
         rating:      typeof r.rating === "number" ? r.rating : 5,
         text:        r.review_text.trim(),
         date:        r.created_time ?? new Date().toISOString(),

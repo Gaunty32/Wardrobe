@@ -11,6 +11,7 @@ interface Review {
   rating: number;
   text: string;
   date: string;
+  mediaUrls?: string[];
 }
 
 // Deterministic colour per author name
@@ -96,6 +97,20 @@ function ReviewCard({ review }: { review: Review }) {
       <p className="text-gray-700 text-sm leading-relaxed flex-1">
         "{text}"
       </p>
+
+      {/* Attached photos */}
+      {review.mediaUrls && review.mediaUrls.length > 0 && (
+        <div className={`grid gap-1.5 ${review.mediaUrls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {review.mediaUrls.slice(0, 4).map((url, i) => (
+            <img
+              key={i}
+              src={url}
+              alt="Review photo"
+              className="w-full rounded-lg object-cover aspect-square"
+            />
+          ))}
+        </div>
+      )}
 
       {/* Platform attribution */}
       <div className="flex items-center gap-1.5 text-xs text-gray-400 pt-1 border-t border-gray-100">
