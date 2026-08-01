@@ -296,9 +296,16 @@ router.post("/image-migration/download-from-wp", async (req: Request, res: Respo
               timeout: 15000,
             };
             const req = https.request(options, (resp: any) => {
+              // WP often redirects the raw-IP request to the canonical domain.
+              // Follow with a normal fetch — no raw-IP tricks needed after the redirect.
               if (resp.statusCode >= 300 && resp.statusCode < 400) {
-                reject(new Error(`HTTP ${resp.statusCode} (redirect — WP may be misconfigured)`));
-                resp.resume(); return;
+                resp.resume();
+                const location: string = resp.headers["location"] ?? "";
+                if (!location) { reject(new Error(`HTTP ${resp.statusCode} (no Location header)`)); return; }
+                fetch(location, { signal: AbortSignal.timeout(15000) })
+                  .then(r => r.ok ? r.arrayBuffer().then(ab => resolve(Buffer.from(ab))) : Promise.reject(new Error(`HTTP ${r.status} after redirect`)))
+                  .catch(reject);
+                return;
               }
               if (resp.statusCode !== 200) {
                 reject(new Error(`HTTP ${resp.statusCode}`));

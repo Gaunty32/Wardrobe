@@ -3001,8 +3001,15 @@ export default function Settings() {
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Get a token from <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline">Meta Graph API Explorer</a> → select your app → change "User or Page" to your <strong>Page</strong> → Generate Access Token.
+                    Get a token from <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline">Meta Graph API Explorer</a> → select your app → change "User or Page" to your <strong>Page</strong> → add permissions <code>pages_read_engagement</code> and <code>pages_read_user_content</code> → Generate Access Token.
                   </p>
+                  <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                    <span>
+                      <strong>Reviewer names &amp; photos require <code>pages_read_user_content</code>.</strong>{" "}
+                      Without it, Facebook strips reviewer identity from every review and they show as "Facebook User". Re-generate your token with this permission to fix it.
+                    </span>
+                  </div>
                 </div>
 
                 {/* Token check error */}

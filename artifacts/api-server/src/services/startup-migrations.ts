@@ -2440,6 +2440,23 @@ export async function refreshProductIssues(): Promise<void> {
   `);
   console.log("[startup] O211 item 917 dispatch corrected");
 
+  // P357 item 1547 (Glide ESD Safety Trainer size 13 ×1): order was placed via the portal
+  // but the store-stock allocation was not applied at order time — item incorrectly entered
+  // the purchasing queue.  Stock was physically available at the customer's site.
+  // Plain item (no finish_id) so set stock_status='complete' (not 'allocated', which would
+  // leave it stuck without a production step to advance it).
+  await db.execute(sql`
+    UPDATE order_items
+    SET purchase_required   = false,
+        purchase_quantity   = NULL,
+        purchasing_queued_at = NULL,
+        stock_status        = 'complete',
+        stock_allocated_at  = NOW()
+    WHERE id = 1547
+      AND purchase_required = true
+  `);
+  console.log("[startup] P357 item 1547 store-allocation correction applied");
+
   // Social posts table
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS social_posts (
