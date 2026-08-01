@@ -2457,6 +2457,20 @@ export async function refreshProductIssues(): Promise<void> {
   `);
   console.log("[startup] P357 item 1547 store-allocation correction applied");
 
+  // P358 item 1548 (Swift ESD Safety Shoe size 8 ×1): same root cause as P357 —
+  // portal order placed without store-stock allocation being applied.
+  await db.execute(sql`
+    UPDATE order_items
+    SET purchase_required    = false,
+        purchase_quantity    = NULL,
+        purchasing_queued_at = NULL,
+        stock_status         = 'complete',
+        stock_allocated_at   = NOW()
+    WHERE id = 1548
+      AND purchase_required = true
+  `);
+  console.log("[startup] P358 item 1548 store-allocation correction applied");
+
   // Social posts table
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS social_posts (

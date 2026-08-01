@@ -668,55 +668,74 @@ router.post("/gbp/location", async (req, res): Promise<void> => {
 });
 
 // POST /gbp/fix-location
-// Tests the stored bare location ID against the Reviews API using the accounts/-
-// wildcard — no Account Management API call, no quota hit.  On success, extracts
-// and persists the canonical accounts/.../locations/... path automatically.
+// Calls the Account Management API once to discover the correct
+// accounts/{accountId}/locations/{locationId} path, verifies it against the Reviews
+// API, and persists the result so every subsequent refresh works without another lookup.
 router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
   let token: string | null;
   try { token = await getGbpAccessToken(); } catch { token = null; }
   if (!token) { res.status(400).json({ error: "Not authenticated with Google" }); return; }
 
-  const locationId = await getSetting("gbp_location_name");
-  if (!locationId) { res.status(400).json({ error: "No location ID stored" }); return; }
+  const storedValue = await getSetting("gbp_location_name");
+  if (!storedValue) { res.status(400).json({ error: "No location ID stored" }); return; }
 
-  // Already a full path — nothing to fix
-  if (locationId.includes("/locations/")) {
-    res.json({ ok: true, locationName: locationId, alreadyResolved: true });
-    return;
+  // Already the correct full path — verify it still works, then return
+  if (storedValue.startsWith("accounts/") && storedValue.includes("/locations/")) {
+    const probe = await fetch(
+      `https://mybusinessreviews.googleapis.com/v1/${storedValue}/reviews?pageSize=1`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
+    );
+    if (probe.ok) {
+      res.json({ ok: true, locationName: storedValue, alreadyResolved: true });
+      return;
+    }
+    // Path stored but no longer working — fall through to re-discover
   }
 
-  // Normalise to v1 locations/{id} format (strip any accounts/.../locations/ prefix)
-  const bareId = locationId.includes("/locations/")
-    ? locationId.split("/locations/")[1]
-    : locationId.replace(/^locations\//, "");
-  const wildcardPath = `locations/${bareId}`;
   try {
+    // Discover via Account Management API
+    const locations = await listGbpLocations(token);
+    if (locations.length === 0) {
+      res.status(400).json({ error: "No locations found on this Google account" });
+      return;
+    }
+
+    // Extract bare numeric ID from stored value for matching
+    const bareId = storedValue.includes("/locations/")
+      ? storedValue.split("/locations/")[1]
+      : storedValue.replace(/^locations\//, "");
+
+    const match =
+      locations.find(l => l.name.endsWith(`/locations/${bareId}`)) ??
+      (locations.length === 1 ? locations[0] : null);
+
+    if (!match) {
+      res.status(400).json({
+        error: `Could not match ID "${bareId}" to any location. Found: ${locations.map(l => `${l.title} (${l.name})`).join(", ")}`,
+      });
+      return;
+    }
+
+    // Verify against Reviews API
     const reviewsRes = await fetch(
-      `https://mybusinessreviews.googleapis.com/v1/${wildcardPath}/reviews?pageSize=1`,
+      `https://mybusinessreviews.googleapis.com/v1/${match.name}/reviews?pageSize=1`,
       { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
     );
     if (!reviewsRes.ok) {
       const err = await reviewsRes.text();
-      res.status(400).json({ error: `Reviews API: ${err.slice(0, 300)}` });
+      res.status(400).json({ error: `Reviews API returned ${reviewsRes.status}: ${err.slice(0, 300)}` });
       return;
     }
-    const data: any = await reviewsRes.json();
-    // Extract canonical path from first review's resource name, e.g.
-    // accounts/123456/locations/789/reviews/abc → accounts/123456/locations/789
-    let canonicalLocation = wildcardPath;
-    const firstReview = (data.reviews ?? [])[0];
-    if (firstReview?.name?.includes("/locations/")) {
-      canonicalLocation = (firstReview.name as string).split("/reviews/")[0];
-    }
-    const accountPart = canonicalLocation.split("/locations/")[0];
+
     await Promise.all([
-      setSetting("gbp_location_name", canonicalLocation),
-      setSetting("gbp_account_name", accountPart),
+      setSetting("gbp_location_name", match.name),
+      setSetting("gbp_location_title", match.title),
+      setSetting("gbp_account_name", match.name.split("/locations/")[0]),
       setSetting("gbp_location_resolve_retry_after", "0"),
     ]);
     invalidateLocationsCache();
-    console.log(`[GBP] fix-location: resolved ${locationId} → ${canonicalLocation}`);
-    res.json({ ok: true, locationName: canonicalLocation });
+    console.log(`[GBP] fix-location: resolved "${storedValue}" → ${match.name}`);
+    res.json({ ok: true, locationName: match.name });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

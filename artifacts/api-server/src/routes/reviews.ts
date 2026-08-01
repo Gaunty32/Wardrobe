@@ -80,18 +80,40 @@ async function fetchGoogleReviews(): Promise<Review[]> {
 
   if (!locationName) return [];
 
-  // Normalise to the v1 locations/{id} path used by the newer GBP Reviews API.
-  // Both bare numbers and the full accounts/.../locations/{id} legacy format are
-  // converted to the simpler locations/{id} resource name.
-  if (!locationName.startsWith("locations/")) {
-    // Strip accounts/.../locations/ prefix or use bare number as-is
-    const locationId = locationName.includes("/locations/")
-      ? locationName.split("/locations/")[1]
-      : locationName.replace(/^locations\//, "");
-    locationName = `locations/${locationId}`;
-    console.log(`[reviews] Normalised to v1 path: ${locationName}`);
-    // Persist the clean v1 path so future calls don't need to normalise
-    await setSetting("gbp_location_name", locationName);
+  // The Reviews API requires the full accounts/{accountId}/locations/{locationId} path.
+  // Neither accounts/-/locations/{id} (wildcard) nor locations/{id} (short form) are
+  // accepted — only the explicit account ID works.  If the stored value isn't already
+  // in the correct form, call the Account Management API to discover it.
+  const isFullPath = locationName.startsWith("accounts/") && locationName.includes("/locations/");
+  if (!isFullPath) {
+    console.warn(`[reviews] Stored location "${locationName}" is not a canonical path — attempting auto-discovery`);
+    try {
+      const locations = await listGbpLocations(token);
+      if (locations.length === 0) {
+        console.warn("[reviews] GBP has no locations accessible via the API.");
+        return [];
+      }
+      // Extract the bare numeric ID so we can match against the discovered paths
+      const bareId = locationName.includes("/locations/")
+        ? locationName.split("/locations/")[1]
+        : locationName.replace(/^locations\//, "");
+      const match =
+        locations.find(l => l.name.endsWith(`/locations/${bareId}`)) ??
+        (locations.length === 1 ? locations[0] : null);
+      if (!match) {
+        console.warn(`[reviews] Cannot match ID "${bareId}" to any of ${locations.length} locations — fix in Settings`);
+        return [];
+      }
+      locationName = match.name; // e.g. accounts/123/locations/456
+      await Promise.all([
+        setSetting("gbp_location_name", locationName),
+        setSetting("gbp_location_title", match.title),
+      ]);
+      console.log(`[reviews] Auto-resolved GBP location: ${match.title} (${locationName})`);
+    } catch (err) {
+      console.warn("[reviews] Could not auto-discover GBP location:", err);
+      return [];
+    }
   }
 
   // Fetch location metadata (newReviewUri) and reviews in parallel
