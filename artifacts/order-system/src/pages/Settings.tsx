@@ -3144,7 +3144,15 @@ export default function Settings() {
                                 toast({ title: "Location resolved", description: "Google reviews will load on the next refresh." });
                                 queryClient.invalidateQueries({ queryKey: ["gbp-status"] });
                               } catch (e: any) {
-                                toast({ title: "Could not resolve location", description: e?.message ?? "Check the API server logs.", variant: "destructive" });
+                                toast({ title: "Could not resolve automatically", description: "Both Google APIs are rate-limited. Use the manual entry form below.", variant: "destructive" });
+                                setGbpManualEntry(true);
+                                // Pre-fill the location ID part so the user only needs to add the account number
+                                if (gbpStatus.locationName && !gbpManualName) {
+                                  setGbpManualName(gbpStatus.locationName);
+                                }
+                                if (gbpStatus.locationTitle && !gbpManualTitle) {
+                                  setGbpManualTitle(gbpStatus.locationTitle);
+                                }
                               } finally {
                                 setSavingGbp(false);
                               }

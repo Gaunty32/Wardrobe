@@ -80,16 +80,16 @@ async function fetchGoogleReviews(): Promise<Review[]> {
 
   if (!locationName) return [];
 
-  // The Reviews API requires the full accounts/{accountId}/locations/{locationId} path.
-  // Neither the accounts/-/locations/{id} wildcard nor the short locations/{id} form work.
-  // If the stored value isn't already the canonical form, skip Google reviews and log a
-  // warning — the Account Management API quota is too precious to spend here.
-  // Staff should click "Fix Location Automatically" in Settings → Social Media once to
-  // resolve the path; after that it is stored permanently and this check passes.
+  // The Reviews API requires accounts/{accountId}/locations/{locationId} path.
+  // If not already resolved, try the wildcard accounts/-/locations/{id} — if it works,
+  // the response includes the real account ID which we persist for future calls.
   const isFullPath = locationName.startsWith("accounts/") && locationName.includes("/locations/");
   if (!isFullPath) {
-    console.warn(`[reviews] Stored GBP location "${locationName}" is not resolved yet — use "Fix Location Automatically" in Settings → Social Media.`);
-    return [];
+    const bareId = locationName.replace(/^locations\//, "");
+    const wildcard = `accounts/-/locations/${bareId}`;
+    console.log(`[reviews] Location not yet resolved ("${locationName}") — trying wildcard ${wildcard}`);
+    locationName = wildcard;
+    // Fall through: if wildcard succeeds, block at line ~127 will persist the canonical path.
   }
 
   // Fetch location metadata (newReviewUri) and reviews in parallel
