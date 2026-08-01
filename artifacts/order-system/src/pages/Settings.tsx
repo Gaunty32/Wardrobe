@@ -4158,6 +4158,24 @@ function ShopTab() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+
+  const uploadPhoto = async (file: File, idx: number) => {
+    setUploadingIdx(idx);
+    try {
+      const fd = new FormData();
+      fd.append("photo", file);
+      const r = await fetch(`${API_BASE}/shop/team-members/upload-photo`, { method: "POST", body: fd });
+      if (!r.ok) throw new Error(await r.text());
+      const { url } = await r.json();
+      updateMember(idx, "photoUrl", url);
+      toast({ title: "Photo uploaded" });
+    } catch (e: any) {
+      toast({ title: "Upload failed", description: e.message, variant: "destructive" });
+    } finally {
+      setUploadingIdx(null);
+    }
+  };
 
   useEffect(() => {
     fetch(`${API_BASE}/shop/team-members`)
@@ -4256,21 +4274,45 @@ function ShopTab() {
                 </div>
                 <div className="flex items-end gap-2">
                   <div className="flex-1 grid gap-1.5">
-                    <Label className="text-xs">Photo URL</Label>
+                    <Label className="text-xs">Photo</Label>
+                    <div className="flex items-center gap-2">
+                      {m.photoUrl ? (
+                        <img
+                          src={m.photoUrl}
+                          alt=""
+                          className="w-10 h-10 rounded-full object-cover border shrink-0"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                          {m.name ? m.name.charAt(0).toUpperCase() : '?'}
+                        </div>
+                      )}
+                      <label className="cursor-pointer flex-1" title="Upload or paste a photo URL">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={uploadingIdx === i}
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (file) uploadPhoto(file, i);
+                            e.target.value = "";
+                          }}
+                        />
+                        <div className="flex items-center gap-1.5 text-xs border border-input rounded px-2 py-1.5 hover:bg-muted transition-colors cursor-pointer w-full justify-center">
+                          {uploadingIdx === i ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                          {uploadingIdx === i ? "Uploading…" : (m.photoUrl ? "Replace" : "Upload photo")}
+                        </div>
+                      </label>
+                    </div>
                     <Input
                       value={m.photoUrl}
                       onChange={e => updateMember(i, "photoUrl", e.target.value)}
-                      placeholder="https://www.selectuniforms.co.uk/wp-content/uploads/photo.jpg"
+                      placeholder="or paste a photo URL"
+                      className="text-xs"
                     />
                   </div>
-                  {m.photoUrl && (
-                    <img
-                      src={m.photoUrl}
-                      alt=""
-                      className="w-10 h-10 rounded-full object-cover border shrink-0"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    />
-                  )}
                   <Button
                     variant="ghost"
                     size="icon"

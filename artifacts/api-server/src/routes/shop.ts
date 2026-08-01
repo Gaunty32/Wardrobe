@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import multer from "multer";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, settingsTable } from "@workspace/db";
@@ -1283,6 +1284,37 @@ router.patch("/shop/team-members", async (req: Request, res: Response) => {
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
     `);
     res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── POST /shop/team-members/upload-photo ─────────────────────────────────────
+const teamPhotoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+router.post("/shop/team-members/upload-photo", teamPhotoUpload.single("photo"), async (req: any, res: any): Promise<void> => {
+  if (!req.file) { res.status(400).json({ error: "No photo uploaded" }); return; }
+  try {
+    const { Storage } = await import("@google-cloud/storage");
+    const REPLIT_SIDECAR = "http://127.0.0.1:1106";
+    const gcs = new Storage({
+      credentials: {
+        audience: "replit", subject_token_type: "access_token",
+        token_url: `${REPLIT_SIDECAR}/token`, type: "external_account",
+        credential_source: { url: `${REPLIT_SIDECAR}/credential`, format: { type: "json", subject_token_field_name: "access_token" } },
+        universe_domain: "googleapis.com",
+      },
+      projectId: "",
+    });
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID!;
+    const origName: string = req.file.originalname ?? "photo.jpg";
+    const ext = (origName.match(/\.(jpg|jpeg|png|webp|gif)$/i)?.[0] ?? ".jpg").toLowerCase();
+    const mime: Record<string, string> = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif" };
+    const filename = `team-photos/${Date.now()}-${Math.random().toString(36).slice(2, 9)}${ext}`;
+    const file = gcs.bucket(bucketId).file(`public/${filename}`);
+    await file.save(req.file.buffer, { contentType: mime[ext] ?? "image/jpeg", resumable: false });
+    const proto = req.headers["x-forwarded-proto"] ?? "https";
+    const host = req.headers["x-forwarded-host"] ?? req.headers.host;
+    res.json({ url: `${proto}://${host}/api/storage/public-objects/${filename}` });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

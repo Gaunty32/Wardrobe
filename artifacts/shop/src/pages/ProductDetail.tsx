@@ -235,10 +235,21 @@ function GuidancePanel({ guidance }: { guidance: any }) {
                   <div className="flex items-center gap-4 mb-3">
                     {/* Avatar — large */}
                     <div className="shrink-0 w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-md bg-primary/10 flex items-center justify-center">
-                      {proxyUrl
-                        ? <img src={proxyUrl} alt={q.name} className="w-full h-full object-cover object-top" loading="eager" />
-                        : <span className="text-3xl font-bold text-primary">{(q.name || '?')[0].toUpperCase()}</span>
-                      }
+                      {proxyUrl ? (
+                        <>
+                          <img src={proxyUrl} alt={q.name} className="w-full h-full object-cover object-top" loading="eager"
+                            onError={e => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                              const sib = (e.target as HTMLElement).nextElementSibling as HTMLElement;
+                              if (sib) sib.style.display = 'flex';
+                            }} />
+                          <span style={{ display: 'none' }} className="w-full h-full items-center justify-center text-3xl font-bold text-primary">
+                            {(q.name || '?')[0].toUpperCase()}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-3xl font-bold text-primary">{(q.name || '?')[0].toUpperCase()}</span>
+                      )}
                     </div>
                     <div>
                       {q.name && <p className="font-bold text-gray-900 text-base leading-tight">{q.name}</p>}

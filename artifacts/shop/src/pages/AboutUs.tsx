@@ -12,6 +12,25 @@ interface TeamMember {
   phone?: string | null;
 }
 
+function TeamMemberAvatar({ member }: { member: TeamMember }) {
+  const [failed, setFailed] = useState(false);
+  if (!member.photoUrl || failed) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-extrabold text-4xl">
+        {member.name.charAt(0).toUpperCase()}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={member.photoUrl}
+      alt={member.name}
+      className="w-full h-full object-cover"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 const WHY_UNIFORM = [
   {
     icon: Megaphone,
@@ -84,13 +103,7 @@ export default function AboutUs() {
               {teamMembers.map((member, i) => (
                 <div key={i} className="text-center group">
                   <div className="aspect-square bg-gray-100 mb-5 overflow-hidden rounded-full max-w-[200px] mx-auto border-4 border-gray-200 group-hover:border-primary transition-colors duration-300">
-                    {member.photoUrl ? (
-                      <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-extrabold text-4xl">
-                        {member.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
+                    <TeamMemberAvatar member={member} />
                   </div>
                   <h3 className="font-bold text-gray-900 text-lg">{member.name}</h3>
                   <p className="text-primary text-sm font-semibold mt-0.5 uppercase tracking-wide">{member.role}</p>

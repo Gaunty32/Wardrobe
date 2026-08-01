@@ -719,11 +719,44 @@ router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
       console.warn(`[GBP] fix-location: Business Information API returned ${infoRes.status} — will try Account Management API`);
     }
 
-    // If Business Information API didn't return a usable name, give up rather than
-    // burning Account Management API quota which is shared with auto-post scheduling.
+    // ── Strategy 2: Account Management API ─────────────────────────────────
+    // Fallback when Business Information API is quota-limited (429).
+    // Only called on manual button click, not automatically, so it won't
+    // burn the quota shared with auto-post scheduling.
+    if (!resolvedName) {
+      console.log("[GBP] fix-location: Business Info API unavailable — trying Account Management API...");
+      const acctRes = await fetch(
+        "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
+        { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
+      );
+      if (acctRes.ok) {
+        const acctData: any = await acctRes.json();
+        const accounts: any[] = acctData?.accounts ?? [];
+        for (const acct of accounts) {
+          const acctName: string = acct.name ?? "";
+          if (!acctName.startsWith("accounts/")) continue;
+          const candidate = `${acctName}/locations/${bareId}`;
+          const probe = await fetch(
+            `https://mybusinessreviews.googleapis.com/v1/${candidate}/reviews?pageSize=1`,
+            { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
+          );
+          if (probe.ok) {
+            resolvedName = candidate;
+            console.log(`[GBP] fix-location: resolved via Account Management API → ${resolvedName}`);
+            break;
+          }
+        }
+        if (!resolvedName) {
+          console.warn(`[GBP] fix-location: checked ${accounts.length} accounts, none matched location ${bareId}`);
+        }
+      } else {
+        const acctErr = await acctRes.text();
+        console.warn(`[GBP] fix-location: Account Management API returned ${acctRes.status}: ${acctErr.slice(0, 200)}`);
+      }
+    }
     if (!resolvedName) {
       res.status(400).json({
-        error: "Could not resolve location via Business Information API. The server will retry automatically on next restart — or try again in a few minutes.",
+        error: "Could not resolve location — both APIs are currently unavailable. Please wait a minute and try again.",
       });
       return;
     }
@@ -960,8 +993,8 @@ router.post("/products/:productId/social-posts", async (req, res): Promise<void>
     platforms: z.array(z.string()).default(["facebook", "google"]),
     autoReschedule: z.boolean().default(true),
     scheduledAt: z.string().datetime().optional().nullable(),
-    productImageUrl: z.string().url().optional().nullable(),
-    websiteUrl: z.string().url().optional().nullable(),
+    productImageUrl: z.preprocess(v => (!v || v === "" ? null : v), z.string().url().optional().nullable()),
+    websiteUrl: z.preprocess(v => (!v || v === "" ? null : v), z.string().url().optional().nullable()),
     season: z.enum(["spring", "summer", "autumn", "winter"]).optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -1003,8 +1036,8 @@ router.patch("/social-posts/:id", async (req, res): Promise<void> => {
     status: z.enum(["draft", "scheduled", "published", "failed"]).optional(),
     scheduledAt: z.string().datetime().optional().nullable(),
     newActivity: z.boolean().optional(),
-    productImageUrl: z.string().url().optional().nullable(),
-    websiteUrl: z.string().url().optional().nullable(),
+    productImageUrl: z.preprocess(v => (!v || v === "" ? null : v), z.string().url().optional().nullable()),
+    websiteUrl: z.preprocess(v => (!v || v === "" ? null : v), z.string().url().optional().nullable()),
     season: z.enum(["spring", "summer", "autumn", "winter"]).optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
