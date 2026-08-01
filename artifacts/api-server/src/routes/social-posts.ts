@@ -693,49 +693,72 @@ router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
   }
 
   try {
-    // Discover via Account Management API
-    const locations = await listGbpLocations(token);
-    if (locations.length === 0) {
-      res.status(400).json({ error: "No locations found on this Google account" });
-      return;
-    }
-
-    // Extract bare numeric ID from stored value for matching
+    // Extract the bare numeric location ID from whatever format is stored
     const bareId = storedValue.includes("/locations/")
       ? storedValue.split("/locations/")[1]
       : storedValue.replace(/^locations\//, "");
 
-    const match =
-      locations.find(l => l.name.endsWith(`/locations/${bareId}`)) ??
-      (locations.length === 1 ? locations[0] : null);
-
-    if (!match) {
-      res.status(400).json({
-        error: `Could not match ID "${bareId}" to any location. Found: ${locations.map(l => `${l.title} (${l.name})`).join(", ")}`,
-      });
-      return;
+    // ── Strategy 1: Business Information API ─────────────────────────────────
+    // Uses a completely separate quota from the Account Management API.
+    // GET /v1/locations/{id} returns the full canonical resource name which
+    // includes the account ID (e.g. accounts/123/locations/456).
+    let resolvedName: string | null = null;
+    const infoRes = await fetch(
+      `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${bareId}?readMask=name`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
+    );
+    if (infoRes.ok) {
+      const infoData: any = await infoRes.json();
+      const candidateName: string = infoData?.name ?? "";
+      // Expect "accounts/{accountId}/locations/{locationId}" form
+      if (candidateName.startsWith("accounts/") && candidateName.includes("/locations/")) {
+        resolvedName = candidateName;
+        console.log(`[GBP] fix-location: resolved via Business Information API → ${resolvedName}`);
+      }
+    } else {
+      console.warn(`[GBP] fix-location: Business Information API returned ${infoRes.status} — will try Account Management API`);
     }
 
-    // Verify against Reviews API
+    // ── Strategy 2: Account Management API (fallback, quota-limited) ─────────
+    if (!resolvedName) {
+      const locations = await listGbpLocations(token);
+      if (locations.length === 0) {
+        res.status(400).json({ error: "No locations found on this Google account" });
+        return;
+      }
+      const match =
+        locations.find(l => l.name.endsWith(`/locations/${bareId}`)) ??
+        (locations.length === 1 ? locations[0] : null);
+      if (!match) {
+        res.status(400).json({
+          error: `Could not match ID "${bareId}" to any location. Found: ${locations.map(l => `${l.title} (${l.name})`).join(", ")}`,
+        });
+        return;
+      }
+      resolvedName = match.name;
+      console.log(`[GBP] fix-location: resolved via Account Management API → ${resolvedName}`);
+    }
+
+    // ── Verify against the Reviews API ───────────────────────────────────────
     const reviewsRes = await fetch(
-      `https://mybusinessreviews.googleapis.com/v1/${match.name}/reviews?pageSize=1`,
+      `https://mybusinessreviews.googleapis.com/v1/${resolvedName}/reviews?pageSize=1`,
       { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
     );
     if (!reviewsRes.ok) {
       const err = await reviewsRes.text();
-      res.status(400).json({ error: `Reviews API returned ${reviewsRes.status}: ${err.slice(0, 300)}` });
+      res.status(400).json({ error: `Reviews API returned ${reviewsRes.status} for "${resolvedName}": ${err.slice(0, 300)}` });
       return;
     }
 
+    const accountPart = resolvedName.split("/locations/")[0];
     await Promise.all([
-      setSetting("gbp_location_name", match.name),
-      setSetting("gbp_location_title", match.title),
-      setSetting("gbp_account_name", match.name.split("/locations/")[0]),
+      setSetting("gbp_location_name", resolvedName),
+      setSetting("gbp_account_name", accountPart),
       setSetting("gbp_location_resolve_retry_after", "0"),
     ]);
     invalidateLocationsCache();
-    console.log(`[GBP] fix-location: resolved "${storedValue}" → ${match.name}`);
-    res.json({ ok: true, locationName: match.name });
+    console.log(`[GBP] fix-location: saved "${storedValue}" → ${resolvedName}`);
+    res.json({ ok: true, locationName: resolvedName });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
