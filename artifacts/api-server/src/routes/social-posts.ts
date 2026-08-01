@@ -685,7 +685,9 @@ router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
     return;
   }
 
-  const wildcardPath = `accounts/-/locations/${locationId.replace(/^.*\//, "")}`;
+  // Strip any existing "locations/" prefix to get the bare numeric ID
+  const bareId = locationId.replace(/^locations\//, "").replace(/^accounts\/-\/locations\//, "");
+  const wildcardPath = `accounts/-/locations/${bareId}`;
   try {
     const reviewsRes = await fetch(
       `https://mybusinessreviews.googleapis.com/v1/${wildcardPath}/reviews?pageSize=1`,

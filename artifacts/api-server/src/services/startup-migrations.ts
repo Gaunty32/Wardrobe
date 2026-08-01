@@ -314,8 +314,8 @@ export async function runStartupMigrations(): Promise<void> {
   if ((badLocation.rows as any[]).length > 0) {
     await db.execute(sql`
       INSERT INTO settings (key, value, updated_at)
-      VALUES ('gbp_location_name', '312263897416442125', NOW())
-      ON CONFLICT (key) DO UPDATE SET value = '312263897416442125', updated_at = NOW()
+      VALUES ('gbp_location_name', 'locations/312263897416442125', NOW())
+      ON CONFLICT (key) DO UPDATE SET value = 'locations/312263897416442125', updated_at = NOW()
     `);
     await db.execute(sql`
       INSERT INTO settings (key, value, updated_at)

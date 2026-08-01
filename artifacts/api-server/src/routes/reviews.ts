@@ -80,13 +80,15 @@ async function fetchGoogleReviews(): Promise<Review[]> {
 
   if (!locationName) return [];
 
-  // If the stored location name is a bare number, use the accounts/- wildcard path.
-  // The Reviews API accepts accounts/-/locations/{id} and resolves it server-side,
-  // completely avoiding the low-quota Account Management API.
-  // After a successful fetch we extract the real account name from the returned
-  // review resource names and persist it so future calls use the canonical path.
-  if (!locationName.includes("/")) {
-    locationName = `accounts/-/locations/${locationName}`;
+  // Normalise the stored location name to the full accounts/-/locations/{id} wildcard
+  // path when it is either a bare number or the short locations/{id} v1 format.
+  // The Reviews API resolves accounts/- server-side so we never need to call the
+  // low-quota Account Management API.  After a successful fetch we extract and
+  // persist the real canonical path from the returned review resource names.
+  if (!locationName.startsWith("accounts/")) {
+    // Strip any existing "locations/" prefix to get the bare ID
+    const locationId = locationName.replace(/^locations\//, "");
+    locationName = `accounts/-/locations/${locationId}`;
     console.log(`[reviews] Using wildcard path: ${locationName}`);
   }
 
