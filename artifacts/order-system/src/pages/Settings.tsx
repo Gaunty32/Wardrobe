@@ -3123,8 +3123,8 @@ export default function Settings() {
                         <Globe className="w-4 h-4" /> Load Locations
                       </Button>
                     )}
-                    {/* Warn when location is stored as a bare number — fix with one API call, no quota hit */}
-                    {gbpStatus.locationName && !gbpStatus.locationName.includes("/") && !gbpShowLocationSelector && (
+                    {/* Warn when location isn't the correct full accounts/{id}/locations/{id} path */}
+                    {gbpStatus.locationName && !(gbpStatus.locationName.startsWith("accounts/") && gbpStatus.locationName.includes("/locations/")) && !gbpShowLocationSelector && (
                       <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                         <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                         <div className="space-y-2">
