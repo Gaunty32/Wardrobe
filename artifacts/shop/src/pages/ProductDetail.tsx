@@ -227,8 +227,12 @@ function GuidancePanel({ guidance }: { guidance: any }) {
           </div>
           <div className="divide-y divide-blue-100">
             {quotesArr.map((q, i) => {
+              // Internal storage paths are served directly — the image proxy
+              // rejects non-https URLs so only proxy external (WordPress etc) URLs.
               const proxyUrl = q.imageUrl
-                ? `/api/shop/image-proxy?url=${encodeURIComponent(q.imageUrl)}`
+                ? (q.imageUrl.startsWith('/api/storage/') || q.imageUrl.startsWith('/api/')
+                    ? q.imageUrl
+                    : `/api/shop/image-proxy?url=${encodeURIComponent(q.imageUrl)}`)
                 : null;
               return (
                 <div key={i} className="px-5 py-5">

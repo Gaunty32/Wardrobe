@@ -1113,104 +1113,109 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
 // Strategy: _embed alone doesn't populate _embedded unless _embedded is listed
 // in _fields too. We try that first; fall back to a separate batch media fetch.
 let _blogPostsCache: { posts: any[]; ts: number } | null = null;
+let _blogPostsRefreshing = false;
 const BLOG_POSTS_TTL_MS = 60 * 60 * 1000; // 1 hour server-side cache
 
+async function fetchAndCacheBlogPosts(): Promise<any[]> {
+  const postsUrl =
+    "https://www.selectuniforms.co.uk/wp-json/wp/v2/posts" +
+    "?per_page=9&_fields=id,title,excerpt,date,link,slug,featured_media,_embedded&_embed=wp:featuredmedia";
+  const wpRes = await fetch(postsUrl, { signal: AbortSignal.timeout(8000) });
+  if (!wpRes.ok) throw new Error(`WordPress API error ${wpRes.status}`);
+  const posts: any[] = await wpRes.json();
+
+  // Try to pull image URLs from _embedded first
+  const mediaMap: Record<number, string> = {};
+  for (const p of posts) {
+    const src = p._embedded?.["wp:featuredmedia"]?.[0]?.source_url;
+    if (src && p.featured_media) mediaMap[p.featured_media] = src;
+  }
+
+  // If _embedded didn't work, batch-fetch media separately (short timeout — non-blocking)
+  const missingIds = posts
+    .map((p: any) => p.featured_media)
+    .filter((id: any) => id && Number(id) > 0 && !mediaMap[id]);
+
+  if (missingIds.length > 0) {
+    try {
+      const mediaUrl =
+        "https://www.selectuniforms.co.uk/wp-json/wp/v2/media" +
+        `?include=${missingIds.join(",")}&per_page=${missingIds.length}`;
+      const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(5000) });
+      if (mediaRes.ok) {
+        const mediaItems: any[] = await mediaRes.json();
+        logger.info({ count: mediaItems.length, missingIds }, "[shop/blog-posts] batch media response");
+        for (const m of mediaItems) {
+          if (m.id && m.source_url) mediaMap[m.id] = m.source_url;
+        }
+      } else {
+        logger.warn({ status: mediaRes.status }, "[shop/blog-posts] batch media fetch failed");
+      }
+    } catch (e: any) {
+      logger.warn({ err: e?.message }, "[shop/blog-posts] batch media fetch threw");
+    }
+  }
+
+  const cleaned = posts.map((p: any) => {
+    const rawExcerpt: string = p.excerpt?.rendered ?? "";
+    const excerpt = rawExcerpt
+      .replace(/<[^>]+>/g, "")
+      .replace(/\[&hellip;\]/g, "…")
+      .replace(/&#8230;/g, "…")
+      .trim();
+    const title: string = (p.title?.rendered ?? "")
+      .replace(/&#8217;/g, "'")
+      .replace(/&#8211;/g, "–")
+      .replace(/&amp;/g, "&")
+      .trim();
+    const featuredImageUrl: string | null =
+      (p.featured_media && mediaMap[p.featured_media]) ? mediaMap[p.featured_media] : null;
+    return { id: p.id, title, excerpt, date: p.date, link: p.link, slug: p.slug, featuredImageUrl };
+  });
+
+  logger.info(
+    { total: cleaned.length, withImage: cleaned.filter(p => p.featuredImageUrl).length },
+    "[shop/blog-posts] cached",
+  );
+  _blogPostsCache = { posts: cleaned, ts: Date.now() };
+  return cleaned;
+}
+
+// Pre-warm the cache on startup so the first real visitor never waits
+setTimeout(() => {
+  fetchAndCacheBlogPosts().catch(e =>
+    logger.warn({ err: e?.message }, "[shop/blog-posts] startup pre-warm failed"),
+  );
+}, 5000); // short delay so startup migrations complete first
+
 router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
-  // Serve from server-side cache if fresh
-  if (_blogPostsCache && Date.now() - _blogPostsCache.ts < BLOG_POSTS_TTL_MS) {
+  const isFresh = _blogPostsCache && Date.now() - _blogPostsCache.ts < BLOG_POSTS_TTL_MS;
+
+  // Serve from cache immediately (even if stale) and refresh in background
+  if (_blogPostsCache) {
     res.setHeader("Cache-Control", "public, max-age=900");
     res.json(_blogPostsCache.posts);
+    // Kick off background refresh if stale and not already running
+    if (!isFresh && !_blogPostsRefreshing) {
+      _blogPostsRefreshing = true;
+      fetchAndCacheBlogPosts()
+        .catch(e => logger.warn({ err: e?.message }, "[shop/blog-posts] background refresh failed"))
+        .finally(() => { _blogPostsRefreshing = false; });
+    }
     return;
   }
+
+  // Cold cache — must fetch synchronously (only happens when pre-warm also failed)
   try {
-    // Include _embedded in _fields so WordPress doesn't strip it out
-    const postsUrl =
-      "https://www.selectuniforms.co.uk/wp-json/wp/v2/posts" +
-      "?per_page=9&_fields=id,title,excerpt,date,link,slug,featured_media,_embedded&_embed=wp:featuredmedia";
-    const wpRes = await fetch(postsUrl, { signal: AbortSignal.timeout(4000) });
-    if (!wpRes.ok) {
-      // Return stale cache rather than an error if we have one
-      if (_blogPostsCache) { res.setHeader("Cache-Control", "public, max-age=60"); res.json(_blogPostsCache.posts); return; }
-      res.status(wpRes.status).json({ error: "WordPress API error" });
-      return;
-    }
-    const posts: any[] = await wpRes.json();
-
-    // Try to pull image URLs from _embedded first
-    const mediaMap: Record<number, string> = {};
-    for (const p of posts) {
-      const src = p._embedded?.["wp:featuredmedia"]?.[0]?.source_url;
-      if (src && p.featured_media) mediaMap[p.featured_media] = src;
-    }
-
-    // If _embedded didn't work, batch-fetch media separately
-    const missingIds = posts
-      .map((p: any) => p.featured_media)
-      .filter((id: any) => id && Number(id) > 0 && !mediaMap[id]);
-
-    if (missingIds.length > 0) {
-      try {
-        const mediaUrl =
-          "https://www.selectuniforms.co.uk/wp-json/wp/v2/media" +
-          `?include=${missingIds.join(",")}&per_page=${missingIds.length}`;
-        const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(10000) });
-        if (mediaRes.ok) {
-          const mediaItems: any[] = await mediaRes.json();
-          logger.info({ count: mediaItems.length, missingIds }, "[shop/blog-posts] batch media response");
-          for (const m of mediaItems) {
-            if (m.id && m.source_url) mediaMap[m.id] = m.source_url;
-          }
-        } else {
-          logger.warn({ status: mediaRes.status }, "[shop/blog-posts] batch media fetch failed");
-        }
-      } catch (e: any) {
-        logger.warn({ err: e?.message }, "[shop/blog-posts] batch media fetch threw");
-      }
-    }
-
-    const cleaned = posts.map((p: any) => {
-      const rawExcerpt: string = p.excerpt?.rendered ?? "";
-      const excerpt = rawExcerpt
-        .replace(/<[^>]+>/g, "")
-        .replace(/\[&hellip;\]/g, "…")
-        .replace(/&#8230;/g, "…")
-        .trim();
-      const title: string = (p.title?.rendered ?? "")
-        .replace(/&#8217;/g, "'")
-        .replace(/&#8211;/g, "–")
-        .replace(/&amp;/g, "&")
-        .trim();
-      const featuredImageUrl: string | null =
-        (p.featured_media && mediaMap[p.featured_media]) ? mediaMap[p.featured_media] : null;
-      return {
-        id: p.id,
-        title,
-        excerpt,
-        date: p.date,
-        link: p.link,
-        slug: p.slug,
-        featuredImageUrl,
-      };
-    });
-
-    logger.info(
-      { total: cleaned.length, withImage: cleaned.filter(p => p.featuredImageUrl).length },
-      "[shop/blog-posts] response"
-    );
-
-    // Save to server-side cache and respond
-    _blogPostsCache = { posts: cleaned, ts: Date.now() };
+    _blogPostsRefreshing = true;
+    const posts = await fetchAndCacheBlogPosts();
     res.setHeader("Cache-Control", "public, max-age=900");
-    res.json(cleaned);
+    res.json(posts);
   } catch (e: any) {
     logger.warn({ err: e }, "[shop/blog-posts] Failed to fetch WordPress posts");
-    // Serve stale cache rather than erroring, if available
-    if (_blogPostsCache) {
-      res.setHeader("Cache-Control", "public, max-age=60");
-      res.json(_blogPostsCache.posts);
-      return;
-    }
     res.status(502).json({ error: "Could not fetch blog posts" });
+  } finally {
+    _blogPostsRefreshing = false;
   }
 });
 
