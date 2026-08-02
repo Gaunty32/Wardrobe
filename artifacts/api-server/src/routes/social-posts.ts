@@ -710,13 +710,20 @@ router.post("/gbp/location", async (req, res): Promise<void> => {
 // POST /gbp/fix-location
 // Tries every available strategy to resolve the stored partial location path to the
 // full accounts/{accountId}/locations/{locationId} form and persists the result.
-router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
+router.post("/gbp/fix-location", async (req, res): Promise<void> => {
   let token: string | null;
   try { token = await getGbpAccessToken(); } catch { token = null; }
   if (!token) { res.status(400).json({ error: "Not authenticated with Google" }); return; }
 
-  const storedValue = await getSetting("gbp_location_name");
-  if (!storedValue) { res.status(400).json({ error: "No location ID stored" }); return; }
+  // Accept an explicit locationId body param — useful when nothing is stored yet
+  const bodyLocationId: string | undefined = req.body?.locationId?.trim?.() || undefined;
+  const storedValue = bodyLocationId
+    ? (bodyLocationId.includes("/") ? bodyLocationId : `locations/${bodyLocationId}`)
+    : (await getSetting("gbp_location_name") ?? "");
+  if (!storedValue) { res.status(400).json({ error: "No location ID stored or provided" }); return; }
+
+  // Temporarily persist the seed value so resolveGbpLocationName can read it
+  if (bodyLocationId) await setSetting("gbp_location_name", storedValue);
 
   // Already a real full path (not a wildcard) — verify it still works, then return
   const isRealFullPath = storedValue.startsWith("accounts/") &&

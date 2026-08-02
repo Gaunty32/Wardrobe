@@ -3159,16 +3159,41 @@ export default function Settings() {
                       <div className="border border-amber-300 bg-amber-50 rounded-md p-3 space-y-3">
                         <div className="flex items-start gap-2 text-sm text-amber-800">
                           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                          <div className="space-y-1">
-                            <p><strong>No location selected.</strong> Enter it manually to enable Google reviews and auto-posting.</p>
+                          <div className="space-y-1.5">
+                            <p><strong>No location selected.</strong> Click <em>Try Auto-Resolve</em> first — it finds the account ID using your OAuth token (no API quota needed).</p>
                             <p className="text-xs text-amber-700">
-                              <strong>To find your account ID:</strong> go to{" "}
+                              If that fails, find your account ID at{" "}
                               <a href="https://business.google.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">business.google.com</a>
-                              {" "}→ click <em>Select Uniforms - Showroom</em> → copy the long number from the URL (e.g. <code className="bg-amber-100 px-1 rounded">…/n/123456789012345/…</code>).
+                              {" "}→ click <em>Select Uniforms - Showroom</em> → copy the number from the URL (e.g. <code className="bg-amber-100 px-1 rounded">…/n/123456789012345/…</code>).
                             </p>
                           </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="outline"
+                            className="gap-1.5 border-green-500 text-green-800 hover:bg-green-50"
+                            disabled={savingGbp}
+                            onClick={async () => {
+                              setSavingGbp(true);
+                              try {
+                                // Try Strategy 0 (userinfo sub) with the known location ID
+                                const data = await apiFetch<any>("/gbp/fix-location", {
+                                  method: "POST",
+                                  body: JSON.stringify({ locationId: "312263897416442125" }),
+                                });
+                                if (data.ok) {
+                                  toast({ title: "Location resolved!", description: data.locationName });
+                                  queryClient.invalidateQueries({ queryKey: ["gbp-status"] });
+                                }
+                              } catch (e: any) {
+                                toast({ title: "Auto-resolve failed", description: e?.message ?? "Could not resolve automatically. Use manual entry.", variant: "destructive" });
+                                setGbpManualEntry(true);
+                              } finally {
+                                setSavingGbp(false);
+                              }
+                            }}>
+                            {savingGbp ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                            Try Auto-Resolve
+                          </Button>
                           <Button size="sm" variant="outline" className="gap-1.5 border-amber-400 text-amber-800 hover:bg-amber-100" onClick={() => setGbpManualEntry(true)}>
                             <CheckCircle className="w-3 h-3" /> Enter Location Manually
                           </Button>
