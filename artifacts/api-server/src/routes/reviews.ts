@@ -80,30 +80,32 @@ async function fetchGoogleReviews(): Promise<Review[]> {
 
   if (!locationName) return [];
 
-  // The Reviews API requires accounts/{accountId}/locations/{locationId} path.
-  // If not already resolved, try the wildcard accounts/-/locations/{id} — if it works,
-  // the response includes the real account ID which we persist for future calls.
+  // The Reviews API requires the full accounts/{accountId}/locations/{locationId} path.
+  // The Business Information API accepts locations/{locationId} directly (no account prefix needed)
+  // and returns the canonical full name in its response — we use that to resolve the account ID
+  // and then retry the Reviews API with the resolved path.
   const isFullPath = locationName.startsWith("accounts/") && locationName.includes("/locations/");
+  const bareId = locationName.replace(/^accounts\/[^/]+\/locations\//, "").replace(/^locations\//, "");
+
   if (!isFullPath) {
-    const bareId = locationName.replace(/^locations\//, "");
-    const wildcard = `accounts/-/locations/${bareId}`;
-    console.log(`[reviews] Location not yet resolved ("${locationName}") — trying wildcard ${wildcard}`);
-    locationName = wildcard;
-    // Fall through: if wildcard succeeds, block at line ~127 will persist the canonical path.
+    console.log(`[reviews] Location not yet resolved ("${locationName}") — will resolve via Business Info API`);
   }
 
   // Fetch location metadata (newReviewUri + canonical name) and reviews in parallel.
-  // The Business Information API supports the accounts/- wildcard; the Reviews API does not.
-  // If the reviews call fails but metadata succeeds, we extract the canonical location name
-  // from meta.name and retry the reviews call with that resolved path.
+  // Business Info API: use locations/{bareId} directly — this works without an account prefix
+  //   and returns meta.name = "accounts/{id}/locations/{id}" which we use to call Reviews API.
+  // Reviews API: use whatever we have; if unresolved it will fail (wildcard not supported).
   try {
+    const reviewsPath = isFullPath ? locationName : `accounts/-/locations/${bareId}`;
+    const metaPath = isFullPath ? locationName : `locations/${bareId}`;
+
     const [reviewsRes, metaRes] = await Promise.all([
       fetch(
-        `https://mybusinessreviews.googleapis.com/v1/${locationName}/reviews?pageSize=50`,
+        `https://mybusinessreviews.googleapis.com/v1/${reviewsPath}/reviews?pageSize=50`,
         { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
       ),
       fetch(
-        `https://mybusinessbusinessinformation.googleapis.com/v1/${locationName}?readMask=name,metadata`,
+        `https://mybusinessbusinessinformation.googleapis.com/v1/${metaPath}?readMask=name,metadata`,
         { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
       ),
     ]);
@@ -316,7 +318,7 @@ router.get("/shop/reviews", async (_req, res): Promise<void> => {
 });
 
 // Debug: return raw Facebook ratings response so we can see reviewer field shape
-router.get("/shop/reviews/facebook-debug", async (_req, res): Promise<void> => {
+router.get("/facebook-ratings-debug", async (_req, res): Promise<void> => {
   const [pageId, token] = await Promise.all([
     getSetting("facebook_page_id"),
     getSetting("facebook_page_access_token"),
