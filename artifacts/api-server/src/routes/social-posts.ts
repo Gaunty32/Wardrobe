@@ -745,7 +745,7 @@ router.post("/gbp/fix-location", async (req, res): Promise<void> => {
     const resolvedName = await resolveGbpLocationName(token);
     if (!resolvedName) {
       res.status(400).json({
-        error: "Could not resolve location automatically. Use the manual entry form — find your Account ID by going to business.google.com, clicking your listing, and copying the number from the URL.",
+        error: "Both Google APIs are rate-limited. Use the manual entry form — go to developers.google.com/my-business/reference/rest/v1/accounts/list, click Try This Method → Execute, and copy your Account ID from the response (e.g. accounts/103456789). Then enter accounts/{YOUR_ID}/locations/312263897416442125 below.",
       });
       return;
     }

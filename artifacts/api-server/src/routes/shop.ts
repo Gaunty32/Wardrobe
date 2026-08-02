@@ -1479,4 +1479,145 @@ Guidelines:
   }
 });
 
+// ─── POST /shop/enquiry ────────────────────────────────────────────────────────
+// Website product enquiry form — emails staff + customer, creates GHL contact.
+router.post("/shop/enquiry", async (req, res): Promise<void> => {
+  const { name, email, phone, businessName, productName, productUrl } = req.body ?? {};
+  if (!name?.trim() || !email?.trim() || !phone?.trim() || !productName?.trim()) {
+    res.status(400).json({ error: "name, email, phone and productName are required" });
+    return;
+  }
+
+  const nameParts = String(name).trim().split(/\s+/);
+  const firstName = nameParts[0];
+  const lastName  = nameParts.slice(1).join(" ") || "";
+
+  const productLink = productUrl
+    ? `<a href="${productUrl}" style="color:#1d4ed8">${productName}</a>`
+    : `<strong>${productName}</strong>`;
+
+  const staffHtml = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1e3a5f;padding:20px 24px;border-radius:8px 8px 0 0">
+        <h2 style="color:#fff;margin:0;font-size:18px">🔥 New Website Enquiry</h2>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:24px">
+        <p style="margin:0 0 16px;font-size:15px;color:#1e293b">
+          <strong>${name}</strong> is interested in ${productLink}.
+        </p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+          <tr><td style="padding:8px 12px;background:#e2e8f0;font-weight:bold;width:140px;border-radius:4px 0 0 4px">Name</td><td style="padding:8px 12px;background:#fff;border:1px solid #e2e8f0">${name}</td></tr>
+          <tr><td style="padding:8px 12px;background:#e2e8f0;font-weight:bold;border-radius:4px 0 0 4px">Email</td><td style="padding:8px 12px;background:#fff;border:1px solid #e2e8f0"><a href="mailto:${email}" style="color:#1d4ed8">${email}</a></td></tr>
+          <tr><td style="padding:8px 12px;background:#e2e8f0;font-weight:bold;border-radius:4px 0 0 4px">Phone</td><td style="padding:8px 12px;background:#fff;border:1px solid #e2e8f0"><a href="tel:${phone}" style="color:#1d4ed8">${phone}</a></td></tr>
+          ${businessName ? `<tr><td style="padding:8px 12px;background:#e2e8f0;font-weight:bold;border-radius:4px 0 0 4px">Business</td><td style="padding:8px 12px;background:#fff;border:1px solid #e2e8f0">${businessName}</td></tr>` : ""}
+          <tr><td style="padding:8px 12px;background:#e2e8f0;font-weight:bold;border-radius:4px 0 0 4px">Product</td><td style="padding:8px 12px;background:#fff;border:1px solid #e2e8f0">${productLink}</td></tr>
+        </table>
+        <p style="margin:20px 0 0;font-size:12px;color:#64748b">
+          Sent via the SBS website product enquiry form. This contact has been tagged <strong>hot lead from website</strong> in HighLevel.
+        </p>
+      </div>
+    </div>`;
+
+  const staffText = [
+    "New Website Enquiry",
+    `Product: ${productName}`,
+    `Name: ${name}`,
+    `Email: ${email}`,
+    `Phone: ${phone}`,
+    businessName ? `Business: ${businessName}` : "",
+    productUrl ? `URL: ${productUrl}` : "",
+  ].filter(Boolean).join("\n");
+
+  const customerHtml = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <div style="background:#1e3a5f;padding:20px 24px;border-radius:8px 8px 0 0">
+        <h2 style="color:#fff;margin:0;font-size:18px">Thanks for your enquiry, ${firstName}!</h2>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 8px 8px;padding:24px">
+        <p style="font-size:15px;color:#1e293b;margin:0 0 12px">
+          We've received your enquiry about <strong>${productName}</strong> and one of our team will be in touch shortly.
+        </p>
+        <p style="font-size:14px;color:#475569;margin:0 0 20px">
+          In the meantime, feel free to browse our full range at <a href="https://wardrobe.selectbranding.co.uk" style="color:#1d4ed8">wardrobe.selectbranding.co.uk</a> or give us a call on <strong>0113 255 2694</strong>.
+        </p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0"/>
+        <p style="font-size:12px;color:#94a3b8;margin:0">
+          Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds LS13 3HE · info@selectbranding.co.uk
+        </p>
+      </div>
+    </div>`;
+
+  const customerText = `Hi ${firstName},\n\nThanks for your enquiry about ${productName}. We'll be in touch shortly.\n\nSelect Branding Solutions\n0113 255 2694 · info@selectbranding.co.uk`;
+
+  // Fire emails in parallel — non-blocking errors
+  await Promise.allSettled([
+    sendEmail({ to: "info@selectbranding.co.uk", subject: `New Enquiry: I'm interested in ${productName}`, html: staffHtml, text: staffText }),
+    sendEmail({ to: email.trim(), subject: `Your enquiry about ${productName}`, html: customerHtml, text: customerText }),
+  ]);
+
+  // ── HighLevel contact (fire-and-forget, non-blocking) ─────────────────────
+  (async () => {
+    try {
+      const [apiKey, locationId] = await Promise.all([
+        getSetting("high_level_api_key"),
+        getSetting("high_level_location_id"),
+      ]);
+      if (!apiKey || !locationId) return;
+
+      const ghlHeaders: Record<string, string> = {
+        Authorization: `Bearer ${apiKey}`,
+        Version: "2021-07-28",
+        "Content-Type": "application/json",
+      };
+
+      const payload: Record<string, unknown> = {
+        firstName,
+        ...(lastName ? { lastName } : {}),
+        email:       email.trim(),
+        phone:       phone.trim(),
+        locationId,
+        tags:        ["hot lead from website"],
+        source:      "Website Enquiry",
+        ...(businessName?.trim() ? { companyName: businessName.trim() } : {}),
+      };
+
+      // Check for existing contact by email to avoid duplicates
+      let existingId: string | null = null;
+      try {
+        const dupRes = await fetch(
+          `https://services.leadconnectorhq.com/contacts/search/duplicate?locationId=${encodeURIComponent(locationId)}&email=${encodeURIComponent(email.trim())}`,
+          { headers: ghlHeaders, signal: AbortSignal.timeout(10_000) },
+        );
+        if (dupRes.ok) {
+          const d: any = await dupRes.json();
+          existingId = d?.contact?.id ?? d?.contacts?.[0]?.id ?? null;
+        }
+      } catch { /* fall through to create */ }
+
+      if (existingId) {
+        await fetch(`https://services.leadconnectorhq.com/contacts/${existingId}`, {
+          method: "PUT", headers: ghlHeaders, body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(10_000),
+        });
+        // Explicitly add the tag in case the contact already existed without it
+        await fetch(`https://services.leadconnectorhq.com/contacts/${existingId}/tags`, {
+          method: "POST", headers: ghlHeaders,
+          body: JSON.stringify({ tags: ["hot lead from website"] }),
+          signal: AbortSignal.timeout(10_000),
+        });
+      } else {
+        await fetch("https://services.leadconnectorhq.com/contacts/", {
+          method: "POST", headers: ghlHeaders, body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(10_000),
+        });
+      }
+      logger.info({ email, productName }, "[shop/enquiry] GHL contact upserted");
+    } catch (err) {
+      logger.warn({ err }, "[shop/enquiry] GHL upsert failed (non-fatal)");
+    }
+  })();
+
+  res.json({ ok: true });
+});
+
 export default router;

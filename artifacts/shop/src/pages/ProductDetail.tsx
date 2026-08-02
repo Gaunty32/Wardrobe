@@ -5,9 +5,10 @@ import { proxyImageUrl } from '@/lib/imageProxy';
 import { Link, useParams } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useCart } from '@/context/CartContext';
 import type { BrandingPosition } from '@/context/CartContext';
-import { Heart, Star, Ruler, X, Tag, Palette, MessageSquare, Loader2, CheckCircle2, Send } from 'lucide-react';
+import { Heart, Star, Ruler, X, Tag, Palette, MessageSquare, Loader2, CheckCircle2, Send, Mail } from 'lucide-react';
 
 // ── Colour → CSS map ──────────────────────────────────────────────────────────
 
@@ -109,9 +110,42 @@ function StarRating({ value, max = 5 }: { value: number; max?: number }) {
   );
 }
 
-function GuidancePanel({ guidance }: { guidance: any }) {
+function GuidancePanel({ guidance, productName, productUrl }: { guidance: any; productName?: string; productUrl?: string }) {
   if (!guidance) return null;
   const { valueRating, durabilityRating, technicalRating, badges, tags, bestFor, notIdealFor, staffRecommendation, staffQuotes } = guidance;
+
+  // ── Enquiry modal state ──────────────────────────────────────────────────────
+  const [enquiryOpen, setEnquiryOpen]   = useState(false);
+  const [enqName, setEnqName]           = useState('');
+  const [enqEmail, setEnqEmail]         = useState('');
+  const [enqPhone, setEnqPhone]         = useState('');
+  const [enqBusiness, setEnqBusiness]   = useState('');
+  const [enqSubmitting, setEnqSubmitting] = useState(false);
+  const [enqDone, setEnqDone]           = useState(false);
+  const [enqError, setEnqError]         = useState('');
+
+  async function submitEnquiry(e: React.FormEvent) {
+    e.preventDefault();
+    setEnqSubmitting(true);
+    setEnqError('');
+    try {
+      const res = await fetch('/api/shop/enquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: enqName, email: enqEmail, phone: enqPhone,
+          businessName: enqBusiness, productName: productName ?? 'this product',
+          productUrl: productUrl ?? window.location.href,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to send');
+      setEnqDone(true);
+    } catch {
+      setEnqError('Something went wrong — please email us directly at info@selectbranding.co.uk');
+    } finally {
+      setEnqSubmitting(false);
+    }
+  }
   const hasRatings   = valueRating > 0 || durabilityRating > 0 || technicalRating > 0;
   const hasBadges    = badges?.length > 0;
   const hasTags      = tags?.length > 0;
@@ -220,10 +254,17 @@ function GuidancePanel({ guidance }: { guidance: any }) {
       )}
 
       {hasStaffRec && (
+        <>
         <div className="rounded-2xl border border-blue-200 bg-blue-50/50 overflow-hidden">
           <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-blue-200">
             <span className="text-[11px]">💬</span>
-            <span className="text-xs font-bold text-blue-800 uppercase tracking-widest">Staff Recommendations</span>
+            <span className="text-xs font-bold text-blue-800 uppercase tracking-widest flex-1">Staff Recommendations</span>
+            <button
+              onClick={() => { setEnquiryOpen(true); setEnqDone(false); setEnqError(''); }}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-primary text-white hover:bg-primary/90 transition-colors shadow-sm"
+            >
+              <Mail className="w-3 h-3" /> Enquire Now
+            </button>
           </div>
           <div className="divide-y divide-blue-100">
             {quotesArr.map((q, i) => {
@@ -269,6 +310,66 @@ function GuidancePanel({ guidance }: { guidance: any }) {
             })}
           </div>
         </div>
+
+        {/* ── Enquiry modal ─────────────────────────────────────────────── */}
+        <Dialog open={enquiryOpen} onOpenChange={setEnquiryOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-primary" /> Enquire about {productName}
+              </DialogTitle>
+              <DialogDescription>
+                Fill in your details and we'll get back to you shortly.
+              </DialogDescription>
+            </DialogHeader>
+
+            {enqDone ? (
+              <div className="flex flex-col items-center gap-3 py-6 text-center">
+                <CheckCircle2 className="w-12 h-12 text-green-500" />
+                <p className="font-semibold text-gray-900">Enquiry sent!</p>
+                <p className="text-sm text-gray-500">We'll be in touch soon. Check your inbox for a confirmation.</p>
+                <button onClick={() => setEnquiryOpen(false)} className="mt-2 text-sm text-primary underline">Close</button>
+              </div>
+            ) : (
+              <form onSubmit={submitEnquiry} className="space-y-4 pt-1">
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700" htmlFor="enq-name">Name <span className="text-red-500">*</span></label>
+                  <input id="enq-name" required value={enqName} onChange={e => setEnqName(e.target.value)}
+                    placeholder="Your full name"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700" htmlFor="enq-email">Email <span className="text-red-500">*</span></label>
+                  <input id="enq-email" type="email" required value={enqEmail} onChange={e => setEnqEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700" htmlFor="enq-phone">Phone <span className="text-red-500">*</span></label>
+                  <input id="enq-phone" type="tel" required value={enqPhone} onChange={e => setEnqPhone(e.target.value)}
+                    placeholder="07700 900000"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-semibold text-gray-700" htmlFor="enq-biz">Business name <span className="text-xs text-gray-400 font-normal">(optional)</span></label>
+                  <input id="enq-biz" value={enqBusiness} onChange={e => setEnqBusiness(e.target.value)}
+                    placeholder="Your company"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                </div>
+                {enqError && <p className="text-xs text-red-600">{enqError}</p>}
+                <button type="submit" disabled={enqSubmitting}
+                  className="w-full flex items-center justify-center gap-2 bg-primary text-white rounded-md py-2.5 text-sm font-bold hover:bg-primary/90 transition-colors disabled:opacity-60">
+                  {enqSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {enqSubmitting ? 'Sending…' : "Send Enquiry"}
+                </button>
+                <p className="text-center text-xs text-gray-400">
+                  Subject: <em>I'm interested in {productName}</em>
+                </p>
+              </form>
+            )}
+          </DialogContent>
+        </Dialog>
+        </>
       )}
     </div>
   );
@@ -747,7 +848,7 @@ export default function ProductDetail() {
             </p>
           )}
 
-          <GuidancePanel guidance={product.guidance} />
+          <GuidancePanel guidance={product.guidance} productName={product.name} productUrl={typeof window !== 'undefined' ? window.location.href : undefined} />
 
           {product.shortDescription && (
             <p className="text-sm text-gray-600 mb-6 leading-relaxed">{product.shortDescription}</p>

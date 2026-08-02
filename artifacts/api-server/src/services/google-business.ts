@@ -126,11 +126,44 @@ export async function resolveGbpLocationName(accessToken: string): Promise<strin
       return match.name;
     }
     if (locations.length > 0) {
-      // Save the title for future reference but don't auto-select if ambiguous
       console.log(`[GBP] resolveLocation: ${locations.length} location(s) found but none matched bareId ${bareId}`);
     }
   } catch (e) {
     console.warn("[GBP] resolveLocation: account API strategy error:", (e as Error).message);
+  }
+
+  // ── Strategy 2: wildcard accounts/- on the Reviews API ──────────────────
+  // The Reviews API supports accounts/-/locations/{id} as a wildcard.
+  // If it returns reviews, the first review's resource name contains the real
+  // account ID — e.g. accounts/123456/locations/{id}/reviews/{rev} — so we
+  // can extract the canonical path without touching the Account Management API.
+  try {
+    const wildcardPath = `accounts/-/locations/${bareId}`;
+    const wRes = await fetch(
+      `https://mybusinessreviews.googleapis.com/v1/${wildcardPath}/reviews?pageSize=1`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(12_000) },
+    );
+    if (wRes.ok) {
+      const wData: any = await wRes.json();
+      const sampleName: string = (wData.reviews ?? [])[0]?.name ?? "";
+      // name shape: accounts/123456/locations/789/reviews/abc
+      const locPart = sampleName.split("/reviews/")[0]; // accounts/123456/locations/789
+      if (locPart?.startsWith("accounts/") && locPart.includes("/locations/")) {
+        console.log(`[GBP] resolveLocation: resolved via Reviews wildcard → ${locPart}`);
+        return locPart;
+      }
+      // Wildcard endpoint returned 200 but no reviews yet — still a valid path;
+      // return it so the caller can at least save and use it.
+      if (wData.reviews !== undefined) {
+        const fallback = `accounts/-/locations/${bareId}`;
+        console.log(`[GBP] resolveLocation: Reviews wildcard succeeded but 0 reviews — using ${fallback} as fallback`);
+        return fallback;
+      }
+    } else {
+      console.warn(`[GBP] resolveLocation: Reviews wildcard returned ${wRes.status}`);
+    }
+  } catch (e) {
+    console.warn("[GBP] resolveLocation: Reviews wildcard strategy error:", (e as Error).message);
   }
 
   return null;
