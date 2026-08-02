@@ -707,30 +707,6 @@ router.post("/gbp/location", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
-// GET /gbp/accounts-debug
-// Returns the raw Google accounts API response so staff can copy the account ID.
-router.get("/gbp/accounts-debug", async (_req, res): Promise<void> => {
-  let token: string | null;
-  try { token = await getGbpAccessToken(); } catch { token = null; }
-  if (!token) { res.status(401).json({ error: "Not connected to Google — check Settings → Social Media." }); return; }
-
-  const GBP_ACCT_API = "https://mybusinessaccountmanagement.googleapis.com/v1";
-  const GBP_V4_API  = "https://mybusiness.googleapis.com/v4";
-
-  const [v1Res, v4Res] = await Promise.allSettled([
-    fetch(`${GBP_ACCT_API}/accounts`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) })
-      .then(async r => ({ status: r.status, body: await r.json().catch(() => r.text()) })),
-    fetch(`${GBP_V4_API}/accounts`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) })
-      .then(async r => ({ status: r.status, body: await r.json().catch(() => r.text()) })),
-  ]);
-
-  res.json({
-    instructions: "Find your account ID in the 'name' field below, e.g. accounts/103456789. Then enter accounts/{ID}/locations/312263897416442125 in the Settings manual entry form.",
-    v1_account_management_api: v1Res.status === "fulfilled" ? v1Res.value : { error: String(v1Res.reason) },
-    v4_legacy_api:              v4Res.status === "fulfilled" ? v4Res.value : { error: String(v4Res.reason) },
-  });
-});
-
 // POST /gbp/fix-location
 // Tries every available strategy to resolve the stored partial location path to the
 // full accounts/{accountId}/locations/{locationId} form and persists the result.
