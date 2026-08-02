@@ -1418,6 +1418,8 @@ export default function Settings() {
   const [fbFormLoaded, setFbFormLoaded] = useState(false);
   const [savingFb, setSavingFb] = useState(false);
   const [checkingFbToken, setCheckingFbToken] = useState(false);
+  const [fbCheckMissingPerms, setFbCheckMissingPerms] = useState<string[]>([]);
+  const [fbCheckGrantedPerms, setFbCheckGrantedPerms] = useState<string[]>([]);
   type FbPage = { id: string; name: string; category: string; pageToken: string };
   const [fbTokenPages, setFbTokenPages] = useState<FbPage[] | null>(null);
   const [fbTokenError, setFbTokenError] = useState<string | null>(null);
@@ -1773,6 +1775,16 @@ export default function Settings() {
       setFbFormLoaded(true);
     }
   }, [rawSettings, fbFormLoaded]);
+
+  // Auto-check the currently saved Facebook token's permissions when settings load
+  const { data: fbSavedTokenCheck } = useQuery<{ hasToken: boolean; isExpired?: boolean; grantedPermissions?: string[]; missingPermissions?: string[] }>({
+    queryKey: ["fb-saved-token-check"],
+    queryFn: () => apiFetch("/facebook/check-saved-token"),
+    enabled: !!rawSettings?.["facebook_page_access_token"],
+    staleTime: 5 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
 
   useEffect(() => {
     if (rawSettings && !liClientId) {
@@ -2983,6 +2995,8 @@ export default function Settings() {
                           });
                           setFbIsPageToken(data.isPageToken ?? false);
                           setFbTokenPages(data.pages ?? []);
+                          setFbCheckGrantedPerms(data.grantedPermissions ?? []);
+                          setFbCheckMissingPerms(data.missingPermissions ?? []);
                         } catch (e: any) {
                           // apiFetch throws on non-ok — try to parse the message
                           const msg = e.message ?? "Request failed";
@@ -2998,16 +3012,53 @@ export default function Settings() {
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Get a token from <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline">Meta Graph API Explorer</a> → select your app → change "User or Page" to your <strong>Page</strong> → add permissions <code>pages_read_engagement</code> and <code>pages_read_user_content</code> → Generate Access Token.
+                    Get a token from <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline">Meta Graph API Explorer</a> → select your app → change "User or Page" to your <strong>Page</strong> → add all four permissions below → Generate Access Token.
                   </p>
-                  <div className="flex items-start gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
-                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                    <span>
-                      <strong>Reviewer names &amp; photos require <code>pages_read_user_content</code>.</strong>{" "}
-                      Without it, Facebook strips reviewer identity from every review and they show as "Facebook User". Re-generate your token with this permission to fix it.
-                    </span>
-                  </div>
+                  <p className="text-xs text-muted-foreground">Required: <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>pages_manage_posts</code>, <code>pages_read_user_content</code></p>
                 </div>
+
+                {/* ── Auto-check: saved token permissions ── */}
+                {fbSavedTokenCheck?.hasToken && fbSavedTokenCheck.isExpired && (
+                  <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span><strong>Saved token has expired.</strong> Generate a new one in Meta Graph API Explorer and save it above.</span>
+                  </div>
+                )}
+                {fbSavedTokenCheck?.hasToken && !fbSavedTokenCheck.isExpired && (fbSavedTokenCheck.missingPermissions?.length ?? 0) > 0 && (
+                  <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <div className="space-y-1.5">
+                      <p><strong>Saved token is missing permissions — this is why reviews show "Facebook User".</strong></p>
+                      <p>Missing: {fbSavedTokenCheck.missingPermissions!.map(p => <code key={p} className="bg-red-100 px-1 rounded mr-1">{p}</code>)}</p>
+                      <p className="text-xs">
+                        Go to <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline font-medium">Meta Graph API Explorer</a> → select your app → User or Page: <strong>Select Uniforms</strong> (the Page) → add all four required permissions → <strong>Generate Access Token</strong> → paste here and save.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {fbSavedTokenCheck?.hasToken && !fbSavedTokenCheck.isExpired && (fbSavedTokenCheck.missingPermissions?.length ?? 1) === 0 && (
+                  <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                    <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span><strong>Token has all required permissions.</strong> Reviewer names and photos should appear on the shop.</span>
+                  </div>
+                )}
+
+                {/* ── Manual check-token result: missing permissions ── */}
+                {fbCheckMissingPerms.length > 0 && fbTokenPages !== null && (
+                  <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <div className="space-y-1">
+                      <p><strong>This token is missing:</strong> {fbCheckMissingPerms.map(p => <code key={p} className="bg-red-100 px-1 rounded mr-1">{p}</code>)}</p>
+                      <p className="text-xs">Re-generate with all four required permissions before saving.</p>
+                    </div>
+                  </div>
+                )}
+                {fbCheckGrantedPerms.length > 0 && fbCheckMissingPerms.length === 0 && (
+                  <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                    <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>All required permissions are present on this token.</span>
+                  </div>
+                )}
 
                 {/* Token check error */}
                 {fbTokenError && (

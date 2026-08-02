@@ -247,35 +247,74 @@ router.post("/facebook/check-token", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: "accessToken required" }); return; }
   const { accessToken } = parsed.data;
   try {
-    const url = `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token&access_token=${encodeURIComponent(accessToken)}`;
-    const fbRes = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-    const fbData: any = await fbRes.json();
-    if (!fbRes.ok || fbData.error) {
-      const msg = fbData.error?.message ?? `Facebook error ${fbRes.status}`;
+    // Fetch pages and permissions in parallel
+    const [accountsRes, permRes] = await Promise.all([
+      fetch(`https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token&access_token=${encodeURIComponent(accessToken)}`, { signal: AbortSignal.timeout(10_000) }),
+      fetch(`https://graph.facebook.com/v20.0/me/permissions?access_token=${encodeURIComponent(accessToken)}`, { signal: AbortSignal.timeout(8_000) }),
+    ]);
+
+    const fbData: any = await accountsRes.json();
+    if (!accountsRes.ok || fbData.error) {
+      const msg = fbData.error?.message ?? `Facebook error ${accountsRes.status}`;
       const isExpired = msg.includes("Session has expired") || msg.includes("Error validating access token") || msg.includes("OAuthException") || (fbData.error?.code === 190);
       res.status(400).json({ error: msg, isExpired, isUserToken: false });
       return;
     }
+
+    // Collect granted permissions
+    const REQUIRED = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "pages_read_user_content"];
+    let grantedPermissions: string[] = [];
+    let missingPermissions: string[] = [];
+    if (permRes.ok) {
+      const permData: any = await permRes.json();
+      grantedPermissions = (permData.data ?? [])
+        .filter((p: any) => p.status === "granted")
+        .map((p: any) => p.permission as string);
+      missingPermissions = REQUIRED.filter(p => !grantedPermissions.includes(p));
+    }
+
     const pages: { id: string; name: string; category: string; pageToken: string }[] = (fbData.data ?? []).map((p: any) => {
       console.log(`[check-token] page ${p.id} (${p.name}): access_token present=${!!p.access_token}, len=${p.access_token?.length ?? 0}`);
       return { id: p.id, name: p.name, category: p.category ?? "", pageToken: p.access_token ?? "" };
     });
+
     if (pages.length === 0) {
-      // Token is valid but it's a User token with no managed pages, or a Page token
-      // Try fetching /me to confirm it's a page token
       const meRes = await fetch(`https://graph.facebook.com/v20.0/me?fields=id,name,category&access_token=${encodeURIComponent(accessToken)}`, { signal: AbortSignal.timeout(8_000) });
       const meData: any = await meRes.json();
       if (meData.category) {
-        // /me returned a page — this IS a page token
-        res.json({ isPageToken: true, pages: [{ id: meData.id, name: meData.name, category: meData.category, pageToken: accessToken }] });
+        res.json({ isPageToken: true, pages: [{ id: meData.id, name: meData.name, category: meData.category, pageToken: accessToken }], grantedPermissions, missingPermissions });
       } else {
-        res.json({ isPageToken: false, pages: [], noPages: true });
+        res.json({ isPageToken: false, pages: [], noPages: true, grantedPermissions, missingPermissions });
       }
       return;
     }
-    res.json({ isPageToken: false, pages });
+    res.json({ isPageToken: false, pages, grantedPermissions, missingPermissions });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+// GET /facebook/check-saved-token — checks permissions on the currently saved token (no body needed)
+router.get("/facebook/check-saved-token", async (_req, res): Promise<void> => {
+  const token = await getSetting("facebook_page_access_token");
+  if (!token) { res.json({ hasToken: false }); return; }
+  try {
+    const REQUIRED = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "pages_read_user_content"];
+    const permRes = await fetch(`https://graph.facebook.com/v20.0/me/permissions?access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(8_000) });
+    if (!permRes.ok) {
+      const d: any = await permRes.json().catch(() => ({}));
+      const isExpired = d?.error?.code === 190 || (d?.error?.message ?? "").includes("expired");
+      res.json({ hasToken: true, isExpired, grantedPermissions: [], missingPermissions: REQUIRED });
+      return;
+    }
+    const permData: any = await permRes.json();
+    const grantedPermissions: string[] = (permData.data ?? [])
+      .filter((p: any) => p.status === "granted")
+      .map((p: any) => p.permission as string);
+    const missingPermissions = REQUIRED.filter(p => !grantedPermissions.includes(p));
+    res.json({ hasToken: true, isExpired: false, grantedPermissions, missingPermissions });
+  } catch (err) {
+    res.json({ hasToken: true, error: (err as Error).message });
   }
 });
 
