@@ -57,6 +57,31 @@ export async function handleGbpCallback(code: string, redirectUri: string): Prom
   if (data.refresh_token) await setSetting("gbp_refresh_token", data.refresh_token);
   await setSetting("gbp_access_token", data.access_token);
   await setSetting("gbp_token_expires_at", String(Date.now() + (data.expires_in ?? 3600) * 1000));
+
+  // ── Immediately resolve the full canonical location path ──────────────────
+  // We have a fresh token right now with no rate-limit history, so this is the
+  // best moment to call the Account Management + Business Information APIs and
+  // store accounts/{accountId}/locations/{locationId} permanently.
+  // If there is only one location we auto-save it; if there are several the user
+  // picks from the location selector in Settings (which will now have real paths).
+  try {
+    const locations = await listGbpLocations(data.access_token);
+    if (locations.length === 1) {
+      const loc = locations[0];
+      await setSetting("gbp_location_name", loc.name);
+      await setSetting("gbp_location_title", loc.title);
+      if (loc.name.includes("/locations/")) {
+        await setSetting("gbp_account_name", loc.name.split("/locations/")[0]);
+      }
+      await setSetting("gbp_location_resolve_retry_after", "0");
+      console.log(`[GBP] Auto-saved location at connect time: ${loc.title} (${loc.name})`);
+    } else if (locations.length > 1) {
+      console.log(`[GBP] ${locations.length} locations found — user must pick one in Settings → Social Media`);
+    }
+  } catch (err) {
+    // Non-fatal: user can still select location manually in Settings
+    console.warn("[GBP] Could not auto-discover location at connect time:", (err as Error).message);
+  }
 }
 
 export async function getGbpAccessToken(): Promise<string | null> {
@@ -175,7 +200,12 @@ export async function publishGbpPost(locationName: string, accessToken: string, 
 }
 
 export async function disconnectGbp(): Promise<void> {
-  for (const key of ["gbp_refresh_token", "gbp_access_token", "gbp_token_expires_at", "gbp_location_name", "gbp_location_title"]) {
+  for (const key of [
+    "gbp_refresh_token", "gbp_access_token", "gbp_token_expires_at",
+    "gbp_location_name", "gbp_location_title", "gbp_account_name",
+    "gbp_location_resolve_retry_after", "gbp_locations_cache",
+  ]) {
     await setSetting(key, null);
   }
+  _locationsCache = null;
 }
