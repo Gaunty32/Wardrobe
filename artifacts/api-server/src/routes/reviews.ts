@@ -315,6 +315,37 @@ router.get("/shop/reviews", async (_req, res): Promise<void> => {
   }
 });
 
+// Debug: return raw Facebook ratings response so we can see reviewer field shape
+router.get("/shop/reviews/facebook-debug", async (_req, res): Promise<void> => {
+  const [pageId, token] = await Promise.all([
+    getSetting("facebook_page_id"),
+    getSetting("facebook_page_access_token"),
+  ]);
+  if (!pageId || !token) { res.status(400).json({ error: "No page ID or token stored" }); return; }
+
+  const pageTokenRes = await fetch(
+    `https://graph.facebook.com/v20.0/${pageId}?fields=access_token&access_token=${encodeURIComponent(token)}`,
+    { signal: AbortSignal.timeout(10_000) },
+  );
+  const pageTokenData: any = await pageTokenRes.json();
+  const pageToken: string = pageTokenData.access_token ?? token;
+  const exchanged = !!pageTokenData.access_token;
+
+  const ratingsRes = await fetch(
+    `https://graph.facebook.com/v20.0/${pageId}/ratings?fields=reviewer{id,name,picture{url}},rating,review_text,created_time&limit=3&access_token=${encodeURIComponent(pageToken)}`,
+    { signal: AbortSignal.timeout(15_000) },
+  );
+  const ratingsData: any = await ratingsRes.json();
+
+  res.json({
+    pageId,
+    tokenExchanged: exchanged,
+    pageTokenExchangeResponse: pageTokenData,
+    ratingsStatus: ratingsRes.status,
+    ratingsRaw: ratingsData,
+  });
+});
+
 // Force-refresh (used by the weekly SEO check or manual refresh)
 router.post("/shop/reviews/refresh", async (_req, res): Promise<void> => {
   memCache = null;
