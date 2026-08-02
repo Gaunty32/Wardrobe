@@ -92,7 +92,10 @@ async function fetchGoogleReviews(): Promise<Review[]> {
     // Fall through: if wildcard succeeds, block at line ~127 will persist the canonical path.
   }
 
-  // Fetch location metadata (newReviewUri) and reviews in parallel
+  // Fetch location metadata (newReviewUri + canonical name) and reviews in parallel.
+  // The Business Information API supports the accounts/- wildcard; the Reviews API does not.
+  // If the reviews call fails but metadata succeeds, we extract the canonical location name
+  // from meta.name and retry the reviews call with that resolved path.
   try {
     const [reviewsRes, metaRes] = await Promise.all([
       fetch(
@@ -100,31 +103,64 @@ async function fetchGoogleReviews(): Promise<Review[]> {
         { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
       ),
       fetch(
-        `https://mybusinessbusinessinformation.googleapis.com/v1/${locationName}?readMask=metadata`,
+        `https://mybusinessbusinessinformation.googleapis.com/v1/${locationName}?readMask=name,metadata`,
         { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
       ),
     ]);
 
-    // Persist the review URL so the shop can link to it
+    // Extract canonical location name and review URI from metadata response.
+    // meta.name is e.g. "accounts/103456789/locations/312263897416442125" — the full path
+    // the Reviews API needs. Persist it immediately so all future calls are direct.
+    let canonicalName: string | null = null;
     if (metaRes.ok) {
       try {
         const meta: any = await metaRes.json();
         const reviewUri: string | undefined = meta?.metadata?.newReviewUri;
         if (reviewUri) await setSetting("gbp_new_review_uri", reviewUri);
+        const metaName: string | undefined = meta?.name;
+        if (metaName?.startsWith("accounts/") && metaName.includes("/locations/")) {
+          canonicalName = metaName;
+          if (locationName !== canonicalName) {
+            const accountPart = canonicalName.split("/locations/")[0];
+            await Promise.all([
+              setSetting("gbp_location_name", canonicalName),
+              setSetting("gbp_account_name", accountPart),
+            ]);
+            console.log(`[reviews] Resolved canonical location from Business Info API → ${canonicalName}`);
+          }
+        }
       } catch { /* non-fatal */ }
     }
 
-    if (!reviewsRes.ok) {
+    // If the reviews call failed (wildcard not supported by Reviews API) but we now have
+    // the canonical name from metadata, retry with the resolved path.
+    let reviewsData: any = null;
+    if (!reviewsRes.ok && canonicalName) {
+      console.log(`[reviews] Wildcard reviews failed (${reviewsRes.status}) — retrying with canonical path ${canonicalName}`);
+      const retryRes = await fetch(
+        `https://mybusinessreviews.googleapis.com/v1/${canonicalName}/reviews?pageSize=50`,
+        { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
+      );
+      if (retryRes.ok) {
+        reviewsData = await retryRes.json();
+      } else {
+        const err = await retryRes.text();
+        console.warn(`[reviews] GBP reviews retry also failed (${retryRes.status}): ${err.slice(0, 200)}`);
+        return [];
+      }
+    } else if (!reviewsRes.ok) {
       const err = await reviewsRes.text();
       console.warn(`[reviews] GBP reviews fetch failed (${reviewsRes.status}): ${err.slice(0, 200)}`);
       return [];
+    } else {
+      reviewsData = await reviewsRes.json();
     }
-    const data: any = await reviewsRes.json();
 
-    // If we used the wildcard accounts/- path, extract the real account name from
-    // the first returned review resource name (e.g. accounts/123/locations/456/reviews/789)
-    // and persist the canonical location path so future calls are direct.
-    if (locationName.startsWith("accounts/-/") && (data.reviews ?? []).length > 0) {
+    const data: any = reviewsData;
+
+    // If we used the wildcard accounts/- path and reviews succeeded (no retry needed),
+    // also extract the canonical name from the first review resource name as a fallback.
+    if (locationName.startsWith("accounts/-/") && !canonicalName && (data.reviews ?? []).length > 0) {
       const sampleName: string = data.reviews[0].name ?? "";
       const locPart = sampleName.split("/reviews/")[0]; // accounts/123/locations/456
       if (locPart?.includes("/locations/")) {
