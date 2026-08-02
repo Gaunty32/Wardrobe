@@ -1663,15 +1663,17 @@ export default function Settings() {
   const { data: gbpLocations, error: gbpLocationsError, isFetching: gbpLocationsFetching } = useQuery<{ name: string; title: string }[]>({
     queryKey: ["gbp-locations", gbpLocationsRefreshCount],
     queryFn: () => apiFetch(gbpLocationsRefreshCount > 0 ? "/gbp/locations?refresh=1" : "/gbp/locations"),
-    // Only fetch locations when: no location saved yet, or user explicitly asked to change/refresh
-    enabled: !!gbpStatus?.connected && (!gbpStatus.locationName || gbpShowLocationSelector || gbpLocationsRefreshCount > 0),
+    // Only fetch when user explicitly opens the selector or hits Retry — never auto-fire on page load.
+    // Auto-firing burns the very low GBP Account Management API quota immediately.
+    enabled: !!gbpStatus?.connected && (gbpShowLocationSelector || gbpLocationsRefreshCount > 0),
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     staleTime: 60 * 60_000,
   });
 
-  // Auto-countdown + retry when a rate-limit error includes retryAfter
+  // Countdown display only — does NOT auto-retry (auto-retry burns the low GBP API quota).
+  // User must click Retry manually after the countdown reaches zero.
   useEffect(() => {
     if (!gbpLocationsError) { setGbpRetryCountdown(null); return; }
     const raw = (gbpLocationsError as any)?.message ?? String(gbpLocationsError);
@@ -1681,12 +1683,7 @@ export default function Settings() {
     setGbpRetryCountdown(retryAfter);
     const interval = setInterval(() => {
       setGbpRetryCountdown((prev) => {
-        if (prev === null || prev <= 1) {
-          clearInterval(interval);
-          // Auto-trigger retry once countdown expires
-          setGbpLocationsRefreshCount((c) => c + 1);
-          return null;
-        }
+        if (prev === null || prev <= 1) { clearInterval(interval); return 0; }
         return prev - 1;
       });
     }, 1000);
@@ -3107,21 +3104,33 @@ export default function Settings() {
                       </div>
                     )}
 
-                    {!gbpStatus.locationName && (
-                      <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        <span>
-                          <strong>No location selected.</strong>{" "}
-                          {gbpShowLocationSelector
-                            ? "Choose your business location from the dropdown below and click Save Location — posts won't work until this is set."
-                            : "Click \"Load Locations\" to choose your business — posts won't work until this is set."}
-                        </span>
+                    {!gbpStatus.locationName && !gbpManualEntry && (
+                      <div className="border border-amber-300 bg-amber-50 rounded-md p-3 space-y-3">
+                        <div className="flex items-start gap-2 text-sm text-amber-800">
+                          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                          <div className="space-y-1">
+                            <p><strong>No location selected.</strong> Enter it manually to enable Google reviews and auto-posting.</p>
+                            <p className="text-xs text-amber-700">
+                              <strong>To find your account ID:</strong> go to{" "}
+                              <a href="https://business.google.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">business.google.com</a>
+                              {" "}→ click <em>Select Uniforms - Showroom</em> → copy the long number from the URL (e.g. <code className="bg-amber-100 px-1 rounded">…/n/123456789012345/…</code>).
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" className="gap-1.5 border-amber-400 text-amber-800 hover:bg-amber-100" onClick={() => setGbpManualEntry(true)}>
+                            <CheckCircle className="w-3 h-3" /> Enter Location Manually
+                          </Button>
+                          <Button size="sm" variant="ghost" className="gap-1.5 text-amber-700 text-xs" onClick={() => setGbpShowLocationSelector(true)}>
+                            <Globe className="w-3 h-3" /> Try Load from API
+                          </Button>
+                        </div>
                       </div>
                     )}
-                    {!gbpStatus.locationName && !gbpShowLocationSelector && (
-                      <Button size="sm" variant="outline" className="w-fit gap-2" onClick={() => setGbpShowLocationSelector(true)}>
-                        <Globe className="w-4 h-4" /> Load Locations
-                      </Button>
+                    {!gbpStatus.locationName && gbpShowLocationSelector && !gbpManualEntry && (
+                      <div className="text-sm text-amber-700">
+                        Choose your business location from the dropdown below and click Save Location.
+                      </div>
                     )}
                     {/* Warn when location isn't the correct full accounts/{id}/locations/{id} path */}
                     {gbpStatus.locationName && !(gbpStatus.locationName.startsWith("accounts/") && gbpStatus.locationName.includes("/locations/")) && !gbpShowLocationSelector && (

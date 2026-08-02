@@ -59,29 +59,81 @@ export async function handleGbpCallback(code: string, redirectUri: string): Prom
   await setSetting("gbp_token_expires_at", String(Date.now() + (data.expires_in ?? 3600) * 1000));
 
   // ── Immediately resolve the full canonical location path ──────────────────
-  // We have a fresh token right now with no rate-limit history, so this is the
-  // best moment to call the Account Management + Business Information APIs and
-  // store accounts/{accountId}/locations/{locationId} permanently.
-  // If there is only one location we auto-save it; if there are several the user
-  // picks from the location selector in Settings (which will now have real paths).
+  // Strategy 0: for personal GBP accounts the Google user ID (OAuth sub) IS the
+  // account ID — test it first since it needs zero GBP API quota.
+  // Strategy 1: Account Management API + Business Information API (rate-limited).
+  // If none work the user can enter the path manually in Settings.
   try {
-    const locations = await listGbpLocations(data.access_token);
-    if (locations.length === 1) {
-      const loc = locations[0];
-      await setSetting("gbp_location_name", loc.name);
-      await setSetting("gbp_location_title", loc.title);
-      if (loc.name.includes("/locations/")) {
-        await setSetting("gbp_account_name", loc.name.split("/locations/")[0]);
-      }
+    const resolvedName = await resolveGbpLocationName(data.access_token);
+    if (resolvedName) {
+      const accountPart = resolvedName.split("/locations/")[0];
+      await setSetting("gbp_location_name", resolvedName);
+      await setSetting("gbp_account_name", accountPart);
       await setSetting("gbp_location_resolve_retry_after", "0");
-      console.log(`[GBP] Auto-saved location at connect time: ${loc.title} (${loc.name})`);
-    } else if (locations.length > 1) {
-      console.log(`[GBP] ${locations.length} locations found — user must pick one in Settings → Social Media`);
+      console.log(`[GBP] Auto-saved location at connect time: ${resolvedName}`);
     }
   } catch (err) {
-    // Non-fatal: user can still select location manually in Settings
     console.warn("[GBP] Could not auto-discover location at connect time:", (err as Error).message);
   }
+}
+
+/**
+ * Try every available strategy to turn the stored partial location path into
+ * the full accounts/{accountId}/locations/{locationId} form.
+ * Returns the resolved name, or null if all strategies fail.
+ */
+export async function resolveGbpLocationName(accessToken: string): Promise<string | null> {
+  const stored = await getSetting("gbp_location_name") ?? "";
+  const bareId = stored.includes("/locations/")
+    ? stored.split("/locations/").pop()!
+    : stored.replace(/^locations\//, "");
+  if (!bareId) return null;
+
+  // ── Strategy 0: userinfo sub ────────────────────────────────────────────
+  // For personal GBP accounts the Google user sub == account ID.
+  // Uses the OpenID Connect userinfo endpoint — no GBP quota consumed at all.
+  try {
+    const uiRes = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (uiRes.ok) {
+      const uiData: any = await uiRes.json();
+      const sub: string = uiData?.sub ?? "";
+      if (sub) {
+        const candidate = `accounts/${sub}/locations/${bareId}`;
+        const probe = await fetch(
+          `https://mybusinessreviews.googleapis.com/v1/${candidate}/reviews?pageSize=1`,
+          { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) },
+        );
+        if (probe.ok) {
+          console.log(`[GBP] resolveLocation: resolved via userinfo sub → ${candidate}`);
+          return candidate;
+        }
+        console.log(`[GBP] resolveLocation: userinfo sub ${sub} did not match (probe ${probe.status}) — trying account APIs`);
+      }
+    }
+  } catch (e) {
+    console.warn("[GBP] resolveLocation: userinfo strategy error:", (e as Error).message);
+  }
+
+  // ── Strategy 1: Account Management + Business Information APIs ───────────
+  try {
+    const locations = await listGbpLocations(accessToken);
+    const match = locations.find(l => l.name.endsWith(`/locations/${bareId}`));
+    if (match) {
+      console.log(`[GBP] resolveLocation: resolved via location list → ${match.name}`);
+      return match.name;
+    }
+    if (locations.length > 0) {
+      // Save the title for future reference but don't auto-select if ambiguous
+      console.log(`[GBP] resolveLocation: ${locations.length} location(s) found but none matched bareId ${bareId}`);
+    }
+  } catch (e) {
+    console.warn("[GBP] resolveLocation: account API strategy error:", (e as Error).message);
+  }
+
+  return null;
 }
 
 export async function getGbpAccessToken(): Promise<string | null> {
@@ -155,29 +207,80 @@ export async function listGbpLocations(accessToken: string): Promise<{ name: str
     return _locationsCache.locations;
   }
 
-  const accRes = await fetch(`${GBP_ACCOUNT_API}/accounts`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!accRes.ok) {
-    throw parseGbpError(accRes.status, await accRes.text(), "GBP accounts API");
-  }
-  const accData: any = await accRes.json();
-  const accounts: any[] = accData.accounts ?? [];
-  const locations: { name: string; title: string }[] = [];
-  for (const acc of accounts) {
-    const locRes = await fetch(
-      `${GBP_INFO_API}/${acc.name}/locations?readMask=name,title&pageSize=100`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    );
-    if (!locRes.ok) {
-      throw parseGbpError(locRes.status, await locRes.text(), "GBP locations API");
+  // ── Strategy 1: v1 Account Management API + Business Information API ─────
+  const accRes = await fetch(`${GBP_ACCOUNT_API}/accounts`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (accRes.ok) {
+    const accData: any = await accRes.json();
+    const accounts: any[] = accData.accounts ?? [];
+    const locations: { name: string; title: string }[] = [];
+    for (const acc of accounts) {
+      const locRes = await fetch(
+        `${GBP_INFO_API}/${acc.name}/locations?readMask=name,title&pageSize=100`,
+        { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) },
+      );
+      if (!locRes.ok) {
+        const errText = await locRes.text();
+        console.warn(`[GBP] listLocations: Business Info API returned ${locRes.status} for ${acc.name}: ${errText.slice(0, 100)}`);
+        continue;
+      }
+      const locData: any = await locRes.json();
+      for (const loc of locData.locations ?? []) {
+        locations.push({ name: loc.name, title: loc.title ?? loc.name });
+      }
     }
-    const locData: any = await locRes.json();
-    for (const loc of locData.locations ?? []) {
-      locations.push({ name: loc.name, title: loc.title ?? loc.name });
+    if (locations.length > 0) {
+      _locationsCache = { locations, at: now };
+      return locations;
+    }
+    // Fall through to v4 if no locations found
+    console.warn("[GBP] listLocations: v1 APIs returned no locations — trying legacy v4 API");
+  } else {
+    const errText = await accRes.text();
+    console.warn(`[GBP] listLocations: v1 Account Management API returned ${accRes.status} — trying legacy v4 API`);
+    if (accRes.status !== 429 && accRes.status !== 503) {
+      throw parseGbpError(accRes.status, errText, "GBP accounts API");
     }
   }
 
-  _locationsCache = { locations, at: now };
-  return locations;
+  // ── Strategy 2: Legacy My Business API v4 (separate quota) ───────────────
+  const v4AccRes = await fetch(`${GBP_POST_API}/accounts`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!v4AccRes.ok) {
+    const v4Err = await v4AccRes.text();
+    console.warn(`[GBP] listLocations: legacy v4 API also returned ${v4AccRes.status}`);
+    throw parseGbpError(v4AccRes.status, v4Err, "GBP legacy v4 accounts API");
+  }
+  const v4AccData: any = await v4AccRes.json();
+  const v4Accounts: any[] = v4AccData.accounts ?? [];
+  const v4Locations: { name: string; title: string }[] = [];
+  for (const acc of v4Accounts) {
+    const v4LocRes = await fetch(
+      `${GBP_POST_API}/${acc.name}/locations?pageSize=100`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) },
+    );
+    if (!v4LocRes.ok) {
+      console.warn(`[GBP] listLocations: v4 locations for ${acc.name} returned ${v4LocRes.status}`);
+      continue;
+    }
+    const v4LocData: any = await v4LocRes.json();
+    for (const loc of (v4LocData.locations ?? [])) {
+      // v4 loc.name is "accounts/{accountId}/locations/{locationId}"
+      v4Locations.push({ name: loc.name, title: loc.locationName ?? loc.name });
+    }
+  }
+
+  if (v4Locations.length === 0) {
+    throw new Error("No GBP locations found via either API");
+  }
+
+  _locationsCache = { locations: v4Locations, at: now };
+  return v4Locations;
 }
 
 /** Invalidate the in-process locations cache (call after saving a new location). */

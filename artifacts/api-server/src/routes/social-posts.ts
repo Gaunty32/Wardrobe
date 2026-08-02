@@ -7,6 +7,7 @@ import {
   generateGbpAuthUrl, handleGbpCallback, getGbpAccessToken,
   getGbpStatus, getGbpDiagnostics, listGbpLocations, publishGbpPost, disconnectGbp,
   autoGbpRedirectUri, invalidateLocationsCache,
+  resolveGbpLocationName,
 } from "../services/google-business.js";
 import {
   autoLinkedInRedirectUri, generateLinkedInAuthUrl, handleLinkedInCallback,
@@ -668,9 +669,8 @@ router.post("/gbp/location", async (req, res): Promise<void> => {
 });
 
 // POST /gbp/fix-location
-// Calls the Account Management API once to discover the correct
-// accounts/{accountId}/locations/{locationId} path, verifies it against the Reviews
-// API, and persists the result so every subsequent refresh works without another lookup.
+// Tries every available strategy to resolve the stored partial location path to the
+// full accounts/{accountId}/locations/{locationId} form and persists the result.
 router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
   let token: string | null;
   try { token = await getGbpAccessToken(); } catch { token = null; }
@@ -679,8 +679,11 @@ router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
   const storedValue = await getSetting("gbp_location_name");
   if (!storedValue) { res.status(400).json({ error: "No location ID stored" }); return; }
 
-  // Already the correct full path — verify it still works, then return
-  if (storedValue.startsWith("accounts/") && storedValue.includes("/locations/")) {
+  // Already a real full path (not a wildcard) — verify it still works, then return
+  const isRealFullPath = storedValue.startsWith("accounts/") &&
+    storedValue.includes("/locations/") &&
+    !storedValue.startsWith("accounts/-/");
+  if (isRealFullPath) {
     const probe = await fetch(
       `https://mybusinessreviews.googleapis.com/v1/${storedValue}/reviews?pageSize=1`,
       { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
@@ -689,125 +692,17 @@ router.post("/gbp/fix-location", async (_req, res): Promise<void> => {
       res.json({ ok: true, locationName: storedValue, alreadyResolved: true });
       return;
     }
-    // Path stored but no longer working — fall through to re-discover
+    // Path stored but not working — fall through to re-discover
   }
 
   try {
-    // Extract the bare numeric location ID from whatever format is stored
-    const bareId = storedValue.includes("/locations/")
-      ? storedValue.split("/locations/")[1]
-      : storedValue.replace(/^locations\//, "");
-
-    // ── Strategy 1: Business Information API ─────────────────────────────────
-    // Uses a completely separate quota from the Account Management API.
-    // GET /v1/locations/{id} returns the full canonical resource name which
-    // includes the account ID (e.g. accounts/123/locations/456).
-    let resolvedName: string | null = null;
-    const infoRes = await fetch(
-      `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${bareId}?readMask=name`,
-      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
-    );
-    if (infoRes.ok) {
-      const infoData: any = await infoRes.json();
-      const candidateName: string = infoData?.name ?? "";
-      // Expect "accounts/{accountId}/locations/{locationId}" form
-      if (candidateName.startsWith("accounts/") && candidateName.includes("/locations/")) {
-        resolvedName = candidateName;
-        console.log(`[GBP] fix-location: resolved via Business Information API → ${resolvedName}`);
-      }
-    } else {
-      console.warn(`[GBP] fix-location: Business Information API returned ${infoRes.status} — will try Account Management API`);
-    }
-
-    // ── Strategy 2: Account Management API ─────────────────────────────────
-    // Fallback when Business Information API is quota-limited (429).
-    // Only called on manual button click, not automatically, so it won't
-    // burn the quota shared with auto-post scheduling.
-    if (!resolvedName) {
-      console.log("[GBP] fix-location: Business Info API unavailable — trying Account Management API...");
-      const acctRes = await fetch(
-        "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
-        { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
-      );
-      if (acctRes.ok) {
-        const acctData: any = await acctRes.json();
-        const accounts: any[] = acctData?.accounts ?? [];
-        for (const acct of accounts) {
-          const acctName: string = acct.name ?? "";
-          if (!acctName.startsWith("accounts/")) continue;
-          const candidate = `${acctName}/locations/${bareId}`;
-          const probe = await fetch(
-            `https://mybusinessreviews.googleapis.com/v1/${candidate}/reviews?pageSize=1`,
-            { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
-          );
-          if (probe.ok) {
-            resolvedName = candidate;
-            console.log(`[GBP] fix-location: resolved via Account Management API → ${resolvedName}`);
-            break;
-          }
-        }
-        if (!resolvedName) {
-          console.warn(`[GBP] fix-location: checked ${accounts.length} accounts, none matched location ${bareId}`);
-        }
-      } else {
-        const acctErr = await acctRes.text();
-        console.warn(`[GBP] fix-location: Account Management API returned ${acctRes.status}: ${acctErr.slice(0, 200)}`);
-      }
-    }
-    // ── Strategy 3: Legacy My Business API v4 ────────────────────────────────
-    // Separate quota from both v1 APIs above. Deprecated but still functional.
-    if (!resolvedName) {
-      console.log("[GBP] fix-location: trying legacy My Business API v4...");
-      try {
-        const v4Res = await fetch(
-          "https://mybusiness.googleapis.com/v4/accounts",
-          { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
-        );
-        if (v4Res.ok) {
-          const v4Data: any = await v4Res.json();
-          const v4Accounts: any[] = v4Data?.accounts ?? [];
-          console.log(`[GBP] fix-location: v4 returned ${v4Accounts.length} account(s)`);
-          for (const acct of v4Accounts) {
-            const acctName: string = acct.name ?? "";
-            if (!acctName.startsWith("accounts/")) continue;
-            const candidate = `${acctName}/locations/${bareId}`;
-            const probe = await fetch(
-              `https://mybusinessreviews.googleapis.com/v1/${candidate}/reviews?pageSize=1`,
-              { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
-            );
-            if (probe.ok) {
-              resolvedName = candidate;
-              console.log(`[GBP] fix-location: resolved via legacy v4 API → ${resolvedName}`);
-              break;
-            }
-          }
-        } else {
-          const v4Err = await v4Res.text();
-          console.warn(`[GBP] fix-location: legacy v4 API returned ${v4Res.status}: ${v4Err.slice(0, 200)}`);
-        }
-      } catch (v4Err) {
-        console.warn("[GBP] fix-location: legacy v4 API error:", (v4Err as Error).message);
-      }
-    }
-
+    const resolvedName = await resolveGbpLocationName(token);
     if (!resolvedName) {
       res.status(400).json({
-        error: "Could not resolve location — all three Google APIs are currently unavailable. Use the manual entry form below to enter your account ID.",
+        error: "Could not resolve location automatically. Use the manual entry form — find your Account ID by going to business.google.com, clicking your listing, and copying the number from the URL.",
       });
       return;
     }
-
-    // ── Verify against the Reviews API ───────────────────────────────────────
-    const reviewsRes = await fetch(
-      `https://mybusinessreviews.googleapis.com/v1/${resolvedName}/reviews?pageSize=1`,
-      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
-    );
-    if (!reviewsRes.ok) {
-      const err = await reviewsRes.text();
-      res.status(400).json({ error: `Reviews API returned ${reviewsRes.status} for "${resolvedName}": ${err.slice(0, 300)}` });
-      return;
-    }
-
     const accountPart = resolvedName.split("/locations/")[0];
     await Promise.all([
       setSetting("gbp_location_name", resolvedName),
