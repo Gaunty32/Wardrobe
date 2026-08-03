@@ -3432,10 +3432,10 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     if (!finishId) return basePrice;
     const finish = finishes?.find((f: any) => f.id === finishId);
     if (!finish || !finish.processes?.length) return basePrice;
-    // WooCommerce price already includes the cheapest (first) logo.
+    // WooCommerce price already includes the most expensive (primary/main) logo.
     // Add the cost of any additional logos on top.
     const prices: number[] = finish.processes.map((p: any) => p.price ?? 0).sort((a: number, b: number) => a - b);
-    const included = prices[0]; // cheapest = already baked into WooCommerce price
+    const included = prices[prices.length - 1]; // most expensive = primary logo already baked into WooCommerce price
     const extra = finish.totalCost - included;
     return basePrice + Math.max(0, extra);
   };
