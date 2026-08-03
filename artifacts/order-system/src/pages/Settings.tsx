@@ -1415,6 +1415,7 @@ export default function Settings() {
   // Social / Facebook fields
   const [fbPageId, setFbPageId] = useState("");
   const [fbAccessToken, setFbAccessToken] = useState("");
+  const [fbAppSecret, setFbAppSecret] = useState("");
   const [fbFormLoaded, setFbFormLoaded] = useState(false);
   const [savingFb, setSavingFb] = useState(false);
   const [checkingFbToken, setCheckingFbToken] = useState(false);
@@ -1772,12 +1773,13 @@ export default function Settings() {
     if (rawSettings && !fbFormLoaded) {
       setFbPageId(rawSettings["facebook_page_id"] ?? "");
       setFbAccessToken(rawSettings["facebook_page_access_token"] ?? "");
+      setFbAppSecret(rawSettings["facebook_app_secret"] ?? "");
       setFbFormLoaded(true);
     }
   }, [rawSettings, fbFormLoaded]);
 
   // Auto-check the currently saved Facebook token's permissions when settings load
-  const { data: fbSavedTokenCheck } = useQuery<{ hasToken: boolean; isExpired?: boolean; grantedPermissions?: string[]; missingPermissions?: string[] }>({
+  const { data: fbSavedTokenCheck } = useQuery<{ hasToken: boolean; isExpired?: boolean; isNonExpiring?: boolean; expiresAt?: number | null; grantedPermissions?: string[]; missingPermissions?: string[] }>({
     queryKey: ["fb-saved-token-check"],
     queryFn: () => apiFetch("/facebook/check-saved-token"),
     enabled: !!rawSettings?.["facebook_page_access_token"],
@@ -1801,17 +1803,44 @@ export default function Settings() {
     }
     setSavingFb(true);
     try {
+      // Save page ID, token, and App Secret (if provided)
+      const saveBody: Record<string, string> = { facebook_page_id: pageId, facebook_page_access_token: token };
+      if (fbAppSecret) saveBody["facebook_app_secret"] = fbAppSecret;
       const res = await fetch(`${API_BASE}/settings`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ facebook_page_id: pageId, facebook_page_access_token: token }),
+        body: JSON.stringify(saveBody),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `Save failed (HTTP ${res.status})`);
       }
+
+      // If App Secret is configured, auto-extend to a non-expiring Page token
+      if (fbAppSecret) {
+        try {
+          const extRes = await apiFetch<any>("/facebook/extend-token", {
+            method: "POST",
+            body: JSON.stringify({ token, pageId }),
+          });
+          if (extRes.ok || extRes.nonExpiring) {
+            toast({ title: "Facebook settings saved", description: "Token extended to non-expiring Page token — reviews and posts will work indefinitely." });
+            queryClient.invalidateQueries({ queryKey: ["settings"] });
+            queryClient.invalidateQueries({ queryKey: ["fb-saved-token-check"] });
+            return;
+          }
+        } catch (extErr: any) {
+          // Extension failed — token still saved, just show a warning
+          toast({ title: "Facebook settings saved", description: `Token saved but auto-extension failed: ${extErr?.message ?? "unknown error"}. Reviews will work until the token expires.`, variant: "default" });
+          queryClient.invalidateQueries({ queryKey: ["settings"] });
+          queryClient.invalidateQueries({ queryKey: ["fb-saved-token-check"] });
+          return;
+        }
+      }
+
       toast({ title: "Facebook settings saved", description: `Page ID ${pageId} saved successfully.` });
       queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["fb-saved-token-check"] });
     } catch (e: any) {
       toast({ title: "Failed to save Facebook settings", description: e?.message ?? "Unknown error", variant: "destructive" });
     } finally {
@@ -3117,6 +3146,35 @@ export default function Settings() {
                   <Input value={fbPageId} onChange={e => setFbPageId(e.target.value)} placeholder="e.g. 123456789012345" />
                   <p className="text-xs text-muted-foreground">Auto-filled when you select a page above, or enter manually.</p>
                 </div>
+
+                {/* App Secret — enables auto-extension to non-expiring tokens */}
+                <div className="grid gap-2">
+                  <Label>App Secret <span className="text-muted-foreground font-normal">(optional — enables non-expiring tokens)</span></Label>
+                  <Input
+                    type="password"
+                    value={fbAppSecret}
+                    onChange={e => setFbAppSecret(e.target.value)}
+                    placeholder="From Meta Developer Dashboard → Your App → App Settings → Basic"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    If set, tokens are automatically extended to <strong>non-expiring Page tokens</strong> when saved — so you never need to regenerate them. Find it in{" "}
+                    <a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer" className="underline">Meta Developer Dashboard</a> → your app → App Settings → Basic → App Secret.
+                  </p>
+                </div>
+
+                {/* Saved token expiry status */}
+                {fbSavedTokenCheck?.hasToken && !fbSavedTokenCheck.isExpired && fbSavedTokenCheck.isNonExpiring && (
+                  <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                    <CheckCircle className="w-4 h-4 shrink-0" />
+                    <span><strong>Non-expiring Page token.</strong> This token will not expire.</span>
+                  </div>
+                )}
+                {fbSavedTokenCheck?.hasToken && !fbSavedTokenCheck.isExpired && !fbSavedTokenCheck.isNonExpiring && fbSavedTokenCheck.expiresAt && (
+                  <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>Token expires {new Date(fbSavedTokenCheck.expiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}. Add your App Secret above and save to make it permanent.</span>
+                  </div>
+                )}
 
                 <Button type="button" onClick={() => saveFacebookSettings()} disabled={savingFb || !fbPageId || !fbAccessToken} className="gap-2">
                   {savingFb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}

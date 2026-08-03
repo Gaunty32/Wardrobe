@@ -166,6 +166,31 @@ export async function resolveGbpLocationName(accessToken: string): Promise<strin
     console.warn("[GBP] resolveLocation: Reviews wildcard strategy error:", (e as Error).message);
   }
 
+  // ── Strategy 3: Business Information API with bare location ID ────────────
+  // Calling locations/{id}?readMask=name directly (no account prefix needed)
+  // returns the canonical accounts/{accountId}/locations/{id} path in data.name.
+  // This is the same call the startup migration uses and works even when the
+  // Account Management API quota is zero.
+  try {
+    const infoRes = await fetch(
+      `${GBP_INFO_API}/locations/${bareId}?readMask=name`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(10_000) },
+    );
+    if (infoRes.ok) {
+      const infoData: any = await infoRes.json();
+      const fullName: string = infoData?.name ?? "";
+      if (fullName.startsWith("accounts/") && fullName.includes("/locations/")) {
+        console.log(`[GBP] resolveLocation: resolved via Business Info API → ${fullName}`);
+        return fullName;
+      }
+    } else {
+      const errText = await infoRes.text().catch(() => "");
+      console.warn(`[GBP] resolveLocation: Business Info API returned ${infoRes.status}: ${errText.slice(0, 120)}`);
+    }
+  } catch (e) {
+    console.warn("[GBP] resolveLocation: Business Info API strategy error:", (e as Error).message);
+  }
+
   return null;
 }
 

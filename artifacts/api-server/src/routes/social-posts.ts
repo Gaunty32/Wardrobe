@@ -294,17 +294,29 @@ router.post("/facebook/check-token", async (req, res): Promise<void> => {
   }
 });
 
-// GET /facebook/check-saved-token — checks permissions on the currently saved token (no body needed)
+// GET /facebook/check-saved-token — checks permissions + expiry on the currently saved token
 router.get("/facebook/check-saved-token", async (_req, res): Promise<void> => {
   const token = await getSetting("facebook_page_access_token");
   if (!token) { res.json({ hasToken: false }); return; }
   try {
     const REQUIRED = ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "pages_read_user_content"];
-    const permRes = await fetch(`https://graph.facebook.com/v20.0/me/permissions?access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(8_000) });
+    const [permRes, debugRes] = await Promise.all([
+      fetch(`https://graph.facebook.com/v20.0/me/permissions?access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(8_000) }),
+      fetch(`https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`, { signal: AbortSignal.timeout(8_000) }),
+    ]);
+    // Extract expiry from debug_token (0 = non-expiring Page token)
+    let expiresAt: number | null = null;
+    let isNonExpiring = false;
+    if (debugRes.ok) {
+      const dbg: any = await debugRes.json().catch(() => ({}));
+      const exp = dbg?.data?.expires_at;
+      if (exp === 0) { isNonExpiring = true; expiresAt = null; }
+      else if (exp) { expiresAt = exp * 1000; } // convert to ms
+    }
     if (!permRes.ok) {
       const d: any = await permRes.json().catch(() => ({}));
       const isExpired = d?.error?.code === 190 || (d?.error?.message ?? "").includes("expired");
-      res.json({ hasToken: true, isExpired, grantedPermissions: [], missingPermissions: REQUIRED });
+      res.json({ hasToken: true, isExpired, isNonExpiring, expiresAt, grantedPermissions: [], missingPermissions: REQUIRED });
       return;
     }
     const permData: any = await permRes.json();
@@ -312,9 +324,59 @@ router.get("/facebook/check-saved-token", async (_req, res): Promise<void> => {
       .filter((p: any) => p.status === "granted")
       .map((p: any) => p.permission as string);
     const missingPermissions = REQUIRED.filter(p => !grantedPermissions.includes(p));
-    res.json({ hasToken: true, isExpired: false, grantedPermissions, missingPermissions });
+    res.json({ hasToken: true, isExpired: false, isNonExpiring, expiresAt, grantedPermissions, missingPermissions });
   } catch (err) {
     res.json({ hasToken: true, error: (err as Error).message });
+  }
+});
+
+// POST /facebook/extend-token — exchange a short-lived token for a non-expiring Page token.
+// Requires facebook_app_secret to be stored in settings (and extracts app_id via debug_token).
+router.post("/facebook/extend-token", async (req, res): Promise<void> => {
+  const token: string = req.body?.token ?? await getSetting("facebook_page_access_token") ?? "";
+  const pageId: string = req.body?.pageId ?? await getSetting("facebook_page_id") ?? "";
+  if (!token || !pageId) { res.status(400).json({ error: "token and pageId are required" }); return; }
+
+  const appSecret = await getSetting("facebook_app_secret");
+  if (!appSecret) { res.status(400).json({ error: "facebook_app_secret not configured — add it in Settings → Social Media → Facebook" }); return; }
+
+  try {
+    // Step 1: get app_id from debug_token
+    const dbgRes = await fetch(
+      `https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(token)}`,
+      { signal: AbortSignal.timeout(8_000) },
+    );
+    const dbgData: any = await dbgRes.json();
+    const appId: string = dbgData?.data?.app_id ?? "";
+    if (!appId) { res.status(400).json({ error: "Could not read app_id from token — token may be invalid or expired" }); return; }
+
+    // Step 2: exchange to long-lived User Token (60-day)
+    const extendRes = await fetch(
+      `https://graph.facebook.com/v20.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(appSecret)}&fb_exchange_token=${encodeURIComponent(token)}`,
+      { signal: AbortSignal.timeout(10_000) },
+    );
+    const extendData: any = await extendRes.json();
+    if (!extendRes.ok || !extendData.access_token) {
+      res.status(400).json({ error: extendData?.error?.message ?? "Token exchange failed" });
+      return;
+    }
+    const longLivedToken: string = extendData.access_token;
+
+    // Step 3: get Page Access Token from long-lived User Token (Page tokens derived this way never expire)
+    const pageRes = await fetch(
+      `https://graph.facebook.com/v20.0/${pageId}?fields=access_token&access_token=${encodeURIComponent(longLivedToken)}`,
+      { signal: AbortSignal.timeout(8_000) },
+    );
+    const pageData: any = await pageRes.json();
+    const pageToken: string = pageData.access_token ?? "";
+    if (!pageToken) { res.status(400).json({ error: "Could not obtain Page Access Token from long-lived token" }); return; }
+
+    // Save the non-expiring Page token
+    await setSetting("facebook_page_access_token", pageToken);
+    console.log(`[fb] Token extended to non-expiring Page token for page ${pageId}`);
+    res.json({ ok: true, nonExpiring: true });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
