@@ -325,20 +325,28 @@ router.get("/gbp-reviews-debug", async (_req, res): Promise<void> => {
 
     const locationName = await getSetting("gbp_location_name") ?? "";
     const expiresAt = await getSetting("gbp_token_expires_at");
+    const bareId = locationName.replace(/^accounts\/[^/]+\/locations\//, "").replace(/^locations\//, "");
 
+    // Call both APIs in parallel: Business Info (to get true canonical name) + Reviews
     const reviewsUrl = `https://mybusinessreviews.googleapis.com/v1/${locationName}/reviews?pageSize=5`;
-    const reviewsRes = await fetch(reviewsUrl, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(15_000),
-    });
-    const body: any = await reviewsRes.json().catch(() => ({}));
+    const infoUrl = `https://mybusinessbusinessinformation.googleapis.com/v1/locations/${bareId}?readMask=name,title`;
+    const [reviewsRes, infoRes] = await Promise.all([
+      fetch(reviewsUrl, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) }),
+      fetch(infoUrl, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) }),
+    ]);
+    const [reviewsBody, infoBody] = await Promise.all([
+      reviewsRes.json().catch(() => ({})),
+      infoRes.json().catch(() => ({})),
+    ]);
 
     res.json({
       locationName,
       tokenExpiresAt: expiresAt ? new Date(Number(expiresAt)).toISOString() : null,
+      businessInfoStatus: infoRes.status,
+      businessInfoBody: infoBody,
       reviewsUrl,
       reviewsStatus: reviewsRes.status,
-      reviewsBody: body,
+      reviewsBody,
     });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
