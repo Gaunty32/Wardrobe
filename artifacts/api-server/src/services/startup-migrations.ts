@@ -3204,6 +3204,30 @@ export async function refreshProductIssues(): Promise<void> {
     console.log("[startup] shop_team_members seeded with 6 members");
   }
 
+  // ── One-time fix: write known canonical GBP path read from GHL URL ───────────
+  // GHL's Reputation UI URL exposed the full accounts/{acct}/locations/{loc} path.
+  // Write it directly — no API call, no quota, no rate limit.
+  {
+    const flagKey = "gbp_canonical_location_set_v1";
+    const already = await db.execute(sql`SELECT 1 FROM _migration_flags WHERE name = ${flagKey}`);
+    if ((already.rows as any[]).length === 0) {
+      const canonical = "accounts/1110595726794235797576/locations/312263897416442125";
+      const accountPart = "accounts/1110595726794235797576";
+      await db.execute(sql`
+        INSERT INTO settings (key, value, updated_at)
+        VALUES ('gbp_location_name', ${canonical}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${canonical}, updated_at = NOW()
+      `);
+      await db.execute(sql`
+        INSERT INTO settings (key, value, updated_at)
+        VALUES ('gbp_account_name', ${accountPart}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${accountPart}, updated_at = NOW()
+      `);
+      await db.execute(sql`INSERT INTO _migration_flags (name) VALUES (${flagKey})`);
+      console.log(`[startup] GBP canonical location written from known GHL URL: ${canonical}`);
+    }
+  }
+
   // ── Auto-resolve GBP location to full accounts/{id}/locations/{id} path ──────
   // The Reviews API only accepts the full canonical path; neither the short
   // locations/{id} form nor the accounts/-/locations/{id} wildcard work.
