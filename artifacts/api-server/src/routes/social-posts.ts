@@ -50,11 +50,11 @@ async function notifySocialPostFailure(postId: number, productName: string, plat
         <p><strong>Error:</strong></p>
         <pre style="background:#f3f4f6;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap">${error}</pre>
         <p style="margin-top:16px">
-          <a href="https://ordersystem.replit.app/social-posts" style="color:#7c3aed">View social posts →</a>
+          <a href="https://wardrobe.selectbranding.co.uk/order-system/social-posts" style="color:#7c3aed">View social posts →</a>
         </p>
         <p style="color:#6b7280;font-size:12px">The post has been marked as failed. You can retry it from the social posts page.</p>
       </div>`;
-    const text = `Social post failed\n\nProduct: ${productName}\nPlatform: ${platform}\nPost ID: ${postId}\nError: ${error}\n\nView social posts: https://ordersystem.replit.app/social-posts`;
+    const text = `Social post failed\n\nProduct: ${productName}\nPlatform: ${platform}\nPost ID: ${postId}\nError: ${error}\n\nView social posts: https://wardrobe.selectbranding.co.uk/order-system/social-posts`;
     await sendEmail({ to: toEmail, subject, html, text });
   } catch (err) {
     console.warn("[social] Failed to send failure notification:", err);
