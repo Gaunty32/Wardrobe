@@ -25,7 +25,7 @@ export default function Reviews() {
     const script = document.createElement('script');
     script.id = 'endorsal-script';
     script.defer = true;
-    script.src = 'https://d2oeplw15jeq9j.cloudfront.net/widgets/widget.min.js';
+    script.src = 'https://cdn.endorsal.io/widgets/widget.min.js';
     script.onload = () => window.NDRSL?.init(ENDORSAL_ID);
     document.head.appendChild(script);
   }, []);
@@ -47,7 +47,7 @@ export default function Reviews() {
       {/* Endorsal widget */}
       <section className="py-12 bg-gray-50">
         <div className="container mx-auto px-4 max-w-6xl">
-          <div id="ndrsl-widget" />
+          <div id="ndrsl-63b457e1f184b57c7bc0b90c" className="ndrsl-widget" />
         </div>
       </section>
 
