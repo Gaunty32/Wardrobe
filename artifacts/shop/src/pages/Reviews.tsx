@@ -47,7 +47,7 @@ export default function Reviews() {
       {/* Endorsal widget */}
       <section className="py-12 bg-gray-50">
         <div className="container mx-auto px-4 max-w-6xl">
-          <div id="ndrsl-63b457e1f184b57c7bc0b90c" className="ndrsl-widget" />
+          <div id="ndrsl-wol-63b4551bf184b57c7bc0b850" className="ndrsl-widget" />
         </div>
       </section>
 
