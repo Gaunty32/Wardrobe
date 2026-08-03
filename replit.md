@@ -182,3 +182,4 @@ Utility scripts package.
 - **Shop — Core Web Vitals / page speed**: Google ranks on LCP, CLS, INP. Always: lazy-load below-fold images (`loading="lazy"`), use `width`/`height` on all `<img>` to prevent layout shift, code-split routes (React.lazy + Suspense), avoid render-blocking resources, keep bundle size down.
 - **Knowledge Centre — "They Ask, You Answer"**: articles are structured around exact questions customers search for. Each article should directly answer the question in the opening paragraph, then expand. This approach is deliberate for both Google and AI search ranking.
 - **No follow-up task suggestions**: do not propose follow-up tasks at the end of turns.
+- **End-of-session GitHub push**: at the end of each working session, push to `https://github.com/Gaunty32/Wardrobe.git` (origin/main).
