@@ -317,6 +317,34 @@ router.get("/shop/reviews", async (_req, res): Promise<void> => {
   }
 });
 
+// Debug: call GBP Reviews API directly and return the raw status + body
+router.get("/gbp-reviews-debug", async (_req, res): Promise<void> => {
+  try {
+    const token = await getGbpAccessToken();
+    if (!token) { res.json({ error: "No GBP access token available (may need OAuth re-auth)" }); return; }
+
+    const locationName = await getSetting("gbp_location_name") ?? "";
+    const expiresAt = await getSetting("gbp_token_expires_at");
+
+    const reviewsUrl = `https://mybusinessreviews.googleapis.com/v1/${locationName}/reviews?pageSize=5`;
+    const reviewsRes = await fetch(reviewsUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    const body: any = await reviewsRes.json().catch(() => ({}));
+
+    res.json({
+      locationName,
+      tokenExpiresAt: expiresAt ? new Date(Number(expiresAt)).toISOString() : null,
+      reviewsUrl,
+      reviewsStatus: reviewsRes.status,
+      reviewsBody: body,
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
 // Debug: return raw Facebook ratings response so we can see reviewer field shape
 router.get("/facebook-ratings-debug", async (_req, res): Promise<void> => {
   const [pageId, token] = await Promise.all([
