@@ -748,6 +748,8 @@ const importRowSchema = z.object({
   managerName: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   sizes: z.array(z.object({ label: z.string(), size: z.string() })).optional(),
+  roleName: z.string().optional().nullable(),
+  deliveryAddressLabel: z.string().optional().nullable(),
 });
 
 const importBodySchema = z.object({
@@ -769,7 +771,7 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
   const customerId = p.data.customerId;
   const { rows } = body.data;
 
-  // Load existing employees and teams once upfront
+  // Load existing employees, teams, roles and delivery addresses once upfront
   const existingEmployees = await db.select().from(customerEmployeesTable)
     .where(eq(customerEmployeesTable.customerId, customerId));
 
@@ -779,6 +781,22 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
   const teamMap = new Map<string, number>();
   for (const t of existingTeams.rows as any[]) {
     teamMap.set((t.name as string).toLowerCase(), t.id as number);
+  }
+
+  const existingRoles = await db.execute(
+    sql`SELECT id, name FROM customer_roles WHERE customer_id = ${customerId}`
+  );
+  const roleNameMap = new Map<string, number>();
+  for (const r of existingRoles.rows as any[]) {
+    roleNameMap.set((r.name as string).toLowerCase(), r.id as number);
+  }
+
+  const existingAddresses = await db.execute(
+    sql`SELECT id, label FROM customer_delivery_addresses WHERE customer_id = ${customerId}`
+  );
+  const addressLabelMap = new Map<string, number>();
+  for (const a of existingAddresses.rows as any[]) {
+    if (a.label) addressLabelMap.set((a.label as string).toLowerCase(), a.id as number);
   }
 
   let created = 0, updated = 0, skipped = 0;
@@ -802,6 +820,31 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
           `);
           teamId = (newTeam.rows[0] as any).id as number;
           teamMap.set(key, teamId);
+        }
+      }
+
+      // ── Resolve role name → roleId ──────────────────────────────────────────
+      let roleId: number | null = null;
+      if (row.roleName?.trim()) {
+        const key = row.roleName.trim().toLowerCase();
+        roleId = roleNameMap.get(key) ?? null;
+      }
+
+      // ── Resolve delivery address label → deliveryAddressId ──────────────────
+      let deliveryAddressId: number | null = null;
+      if (row.deliveryAddressLabel?.trim()) {
+        const key = row.deliveryAddressLabel.trim().toLowerCase();
+        if (addressLabelMap.has(key)) {
+          deliveryAddressId = addressLabelMap.get(key)!;
+        } else {
+          // Create a new delivery address with just the label
+          const newAddr = await db.execute(sql`
+            INSERT INTO customer_delivery_addresses (customer_id, label)
+            VALUES (${customerId}, ${row.deliveryAddressLabel.trim()})
+            RETURNING id
+          `);
+          deliveryAddressId = (newAddr.rows[0] as any).id as number;
+          addressLabelMap.set(key, deliveryAddressId);
         }
       }
 
@@ -829,6 +872,8 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
         if (row.email !== undefined) updates.email = row.email;
         if (row.phone !== undefined) updates.phone = row.phone;
         if (row.notes !== undefined) updates.notes = row.notes;
+        if (roleId !== null) updates.roleId = roleId;
+        if (deliveryAddressId !== null) updates.deliveryAddressId = deliveryAddressId;
         await db.update(customerEmployeesTable).set(updates).where(eq(customerEmployeesTable.id, match.id));
         employeeId = match.id;
         updated++;
@@ -843,6 +888,8 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
           email: row.email || null,
           phone: row.phone || null,
           notes: row.notes || null,
+          roleId: roleId ?? null,
+          deliveryAddressId: deliveryAddressId ?? null,
           isActive: true,
         }).returning();
         employeeId = newEmp.id;

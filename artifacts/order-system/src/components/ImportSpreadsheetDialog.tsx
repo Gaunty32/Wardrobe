@@ -38,7 +38,9 @@ type ColumnType =
   | "team"
   | "manager_name"
   | "size"
-  | "notes";
+  | "notes"
+  | "delivery_address"
+  | "role";
 
 interface ColumnMapping {
   type: ColumnType;
@@ -61,6 +63,8 @@ interface MappedRow {
   managerName?: string;
   notes?: string;
   sizes: { label: string; size: string }[];
+  deliveryAddressLabel?: string;
+  roleName?: string;
 }
 
 interface ImportResult {
@@ -84,7 +88,7 @@ type Step = "upload" | "map" | "preview" | "order" | "done";
 // Only types shown in the "Map to Field" dropdown — size/notes intentionally excluded
 const MAPPABLE_COLUMN_TYPES: ColumnType[] = [
   "skip", "full_name", "first_name", "last_name", "employee_number",
-  "job_title", "email", "phone", "team", "manager_name",
+  "job_title", "email", "phone", "team", "manager_name", "delivery_address", "role",
 ];
 
 const COLUMN_TYPE_LABELS: Record<ColumnType, string> = {
@@ -100,21 +104,29 @@ const COLUMN_TYPE_LABELS: Record<ColumnType, string> = {
   manager_name: "Team Manager",
   size: "Size (specify label →)",
   notes: "Notes",
+  delivery_address: "Delivery Address",
+  role: "Role",
 };
 
 function autoDetectType(header: string): ColumnType {
   const h = header.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (h.includes("firstname") || h === "first") return "first_name";
   if (h.includes("lastname") || h === "last" || h === "surname") return "last_name";
+  // Apparel export: "Employee Name" column
+  if (h === "employeename") return "full_name";
   // "Team Member", "Name", "Full Name", "Member" etc. → full name
   if (h === "member" || h === "teammember" || h.includes("fullname")) return "full_name";
   if (h.includes("name") && !h.includes("team") && !h.includes("company") && !h.includes("manager")) return "full_name";
   if (h.includes("empno") || h.includes("employeeno") || h.includes("empnum") || h.includes("employeeid") || h === "ref") return "employee_number";
-  if (h.includes("jobtitle") || h.includes("title") || h.includes("position") || h.includes("role")) return "job_title";
+  if (h.includes("jobtitle") || h.includes("title") || h.includes("position")) return "job_title";
   if (h.includes("email") || h.includes("mail")) return "email";
   if (h.includes("phone") || h.includes("tel") || h.includes("mobile")) return "phone";
   if (h.includes("manager") || h.includes("linemanager") || h.includes("reportsto") || h.includes("supervisor")) return "manager_name";
   if (h.includes("team") || h.includes("dept") || h.includes("department") || h.includes("group")) return "team";
+  // Apparel export: "Depot" column = delivery address label
+  if (h === "depot" || h.includes("deliveryaddress") || h.includes("deliverylocation")) return "delivery_address";
+  // Apparel export: "CustGrade" column = role (Male/Female etc.)
+  if (h === "custgrade" || h === "grade" || h === "role" || h === "roles") return "role";
   // Size and Notes are intentionally not auto-detected (not shown in dropdown)
   return "skip";
 }
@@ -176,6 +188,8 @@ function buildMappedRow(rawRow: string[], mappings: ColumnMapping[]): MappedRow 
   let teamName: string | undefined;
   let managerName: string | undefined;
   let notes: string | undefined;
+  let deliveryAddressLabel: string | undefined;
+  let roleName: string | undefined;
   const sizes: { label: string; size: string }[] = [];
 
   for (let i = 0; i < mappings.length; i++) {
@@ -193,6 +207,8 @@ function buildMappedRow(rawRow: string[], mappings: ColumnMapping[]): MappedRow 
       case "last_name": lastName = toTitleCase(val); break;
       case "employee_number": employeeNumber = val; break;
       case "job_title": jobTitle = val; break;
+      case "delivery_address": deliveryAddressLabel = toTitleCase(val); break;
+      case "role": roleName = toTitleCase(val); break;
       case "email": email = val; break;
       case "phone": phone = val; break;
       case "team": teamName = val; break;
@@ -207,7 +223,7 @@ function buildMappedRow(rawRow: string[], mappings: ColumnMapping[]): MappedRow 
   }
 
   if (!firstName) return null;
-  return { firstName, lastName, employeeNumber, jobTitle, email, phone, teamName, managerName, notes, sizes };
+  return { firstName, lastName, employeeNumber, jobTitle, email, phone, teamName, managerName, notes, sizes, deliveryAddressLabel, roleName };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -263,11 +279,26 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
       setSheet(parsed);
       setFileName(file.name);
 
-      // Detect header row: first row with content
-      const hIdx = parsed.rawRows.findIndex(r => r.some(c => String(c).trim()));
-      const hRow = hIdx >= 0 ? hIdx : 0;
+      // Detect header row — Apparel exports have a company row at row 0 and
+      // real headers at row 1, followed by a filter-label row at row 2.
+      // Look for a row in the first 5 that contains "Employee Name".
+      const apparelHdrIdx = parsed.rawRows.findIndex((r, i) =>
+        i < 5 && r.some(c => String(c).trim().toLowerCase() === "employee name")
+      );
+
+      let hRow: number;
+      let dStart: number;
+      if (apparelHdrIdx >= 0) {
+        hRow = apparelHdrIdx;
+        dStart = apparelHdrIdx + 2; // skip the "Grade" filter row below headers
+      } else {
+        const hIdx = parsed.rawRows.findIndex(r => r.some(c => String(c).trim()));
+        hRow = hIdx >= 0 ? hIdx : 0;
+        dStart = hRow + 1;
+      }
+
       setHeaderRowIndex(hRow);
-      setDataStartIndex(hRow + 1);
+      setDataStartIndex(dStart);
 
       // Auto-detect column types from header row
       const headers = parsed.rawRows[hRow] ?? [];
@@ -465,35 +496,51 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
 
           {/* ── Step 1: Upload ── */}
           {step === "upload" && (
-            <div
-              ref={dropZoneRef}
-              className={cn(
-                "border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer",
-                dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/30"
-              )}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-              {loading ? (
-                <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                  <Loader2 className="w-10 h-10 animate-spin" />
-                  <p className="text-sm font-medium">Reading file…</p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                  <Upload className="w-10 h-10 text-primary/50" />
-                  <div>
-                    <p className="font-medium text-foreground">Drag from desktop or click to browse</p>
-                    <p className="text-sm mt-0.5">.xlsx, .xls, .csv supported</p>
+            <div className="space-y-4">
+              <div
+                ref={dropZoneRef}
+                className={cn(
+                  "border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer",
+                  dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/30"
+                )}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                {loading ? (
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                    <Loader2 className="w-10 h-10 animate-spin" />
+                    <p className="text-sm font-medium">Reading file…</p>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                    <Upload className="w-10 h-10 text-primary/50" />
+                    <div>
+                      <p className="font-medium text-foreground">Drag from desktop or click to browse</p>
+                      <p className="text-sm mt-0.5">.xlsx, .xls, .csv supported</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Apparel export instructions */}
+              <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-800 space-y-1.5">
+                <p className="font-semibold text-blue-900">How to export from Apparel</p>
+                <ol className="list-decimal list-inside space-y-0.5 text-blue-700">
+                  <li>Go to <strong>Reports</strong></li>
+                  <li>Select <strong>Manpack</strong></li>
+                  <li>Choose your <strong>Customer Name</strong></li>
+                  <li>Select <strong>Employee Detail</strong></li>
+                  <li>Click <strong>Generate Report</strong></li>
+                  <li>Save to Shared Drive as <strong>XLS file</strong></li>
+                </ol>
+                <p className="text-blue-600 pt-0.5">Columns B (Employee Name), F (Depot) and I (CustGrade) are mapped automatically.</p>
+              </div>
             </div>
           )}
 
@@ -626,6 +673,8 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
                 const hasManager = mappedPreview.some(r => r.managerName);
                 const hasJobTitle = mappedPreview.some(r => r.jobTitle);
                 const hasEmail = mappedPreview.some(r => r.email);
+                const hasDeliveryAddress = mappedPreview.some(r => r.deliveryAddressLabel);
+                const hasRole = mappedPreview.some(r => r.roleName);
                 const dash = <span className="text-muted-foreground/40">—</span>;
                 return (
                   <div className="border border-border rounded-lg overflow-hidden">
@@ -635,6 +684,8 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
                           <tr>
                             <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Name</th>
                             {hasEmpNum && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Emp No.</th>}
+                            {hasRole && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Role</th>}
+                            {hasDeliveryAddress && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Delivery Address</th>}
                             {hasTeam && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Team</th>}
                             {hasManager && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Manager</th>}
                             {hasJobTitle && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Job Title</th>}
@@ -646,6 +697,8 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
                             <tr key={i} className="hover:bg-muted/20">
                               <td className="px-3 py-2 font-medium">{[row.firstName, row.lastName].filter(Boolean).join(" ")}</td>
                               {hasEmpNum && <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{row.employeeNumber || dash}</td>}
+                              {hasRole && <td className="px-3 py-2 text-muted-foreground">{row.roleName || dash}</td>}
+                              {hasDeliveryAddress && <td className="px-3 py-2 text-muted-foreground">{row.deliveryAddressLabel || dash}</td>}
                               {hasTeam && <td className="px-3 py-2 text-muted-foreground">{row.teamName || dash}</td>}
                               {hasManager && <td className="px-3 py-2 text-muted-foreground">{row.managerName || dash}</td>}
                               {hasJobTitle && <td className="px-3 py-2 text-muted-foreground">{row.jobTitle || dash}</td>}
