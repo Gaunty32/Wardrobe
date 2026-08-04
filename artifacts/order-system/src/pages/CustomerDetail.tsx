@@ -1356,6 +1356,71 @@ function ManagerCombobox({ employees, value, onChange }: {
   );
 }
 
+function DeliveryAddressCombobox({ addresses, value, onChange }: {
+  addresses: any[];
+  value: number | null;
+  onChange: (v: number | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const selected = addresses.find(a => a.id === value);
+  const label = selected
+    ? (selected.label || [selected.line1, selected.city, selected.postcode].filter(Boolean).join(", ") || "Unknown address")
+    : "Use order default";
+  const filtered = search.trim()
+    ? addresses.filter(a => {
+        const text = [a.label, a.line1, a.line2, a.city, a.postcode].filter(Boolean).join(" ").toLowerCase();
+        return text.includes(search.toLowerCase());
+      })
+    : addresses;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-ring",
+            !value && "text-muted-foreground"
+          )}
+        >
+          <span className="truncate">{label}</span>
+          <ChevronsUpDown className="w-4 h-4 shrink-0 opacity-50 ml-2" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width]" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Search addresses…" value={search} onValueChange={setSearch} />
+          <CommandList className="max-h-64">
+            <CommandEmpty>No addresses found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value="none" onSelect={() => { onChange(null); setOpen(false); setSearch(""); }}>
+                <Check className={cn("w-4 h-4 mr-2 shrink-0", !value ? "opacity-100" : "opacity-0")} />
+                <span className="text-muted-foreground">Use order default</span>
+              </CommandItem>
+              {filtered.map((a: any) => {
+                const addrLabel = a.label || [a.line1, a.city, a.postcode].filter(Boolean).join(", ") || "Unnamed address";
+                const subtext = a.label ? [a.line1, a.city, a.postcode].filter(Boolean).join(", ") : null;
+                return (
+                  <CommandItem key={a.id} value={String(a.id)} onSelect={() => { onChange(a.id); setOpen(false); setSearch(""); }}>
+                    <Check className={cn("w-4 h-4 mr-2 shrink-0", value === a.id ? "opacity-100" : "opacity-0")} />
+                    <span>
+                      {addrLabel}
+                      {subtext && <span className="ml-1.5 text-muted-foreground text-xs">— {subtext}</span>}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ─── Teams Tab ────────────────────────────────────────────────────────────────
 
 const TEAM_CHIP_COLORS = [
@@ -2324,26 +2389,11 @@ function EmployeesTab({ customerId }: { customerId: number }) {
             </div>
             <div className="grid gap-2">
               <Label>Delivery Address</Label>
-              <Select
-                value={form.deliveryAddressId != null ? String(form.deliveryAddressId) : "none"}
-                onValueChange={v => setForm({ ...form, deliveryAddressId: v === "none" ? null : Number(v) })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Use order default">
-                    {form.deliveryAddressId != null
-                      ? ((addresses as any[])?.find((a: any) => String(a.id) === String(form.deliveryAddressId))?.label ?? "Unknown address")
-                      : "Use order default"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Use order default</SelectItem>
-                  {(addresses as any[])?.map((a: any) => (
-                    <SelectItem key={a.id} value={String(a.id)}>
-                      {a.label || [a.line1, a.city, a.postcode].filter(Boolean).join(", ")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <DeliveryAddressCombobox
+                addresses={(addresses as any[]) ?? []}
+                value={form.deliveryAddressId}
+                onChange={v => setForm({ ...form, deliveryAddressId: v })}
+              />
               <p className="text-xs text-muted-foreground">When set, orders for this employee default to this address.</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
