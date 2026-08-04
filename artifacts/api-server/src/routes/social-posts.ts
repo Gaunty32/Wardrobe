@@ -1032,8 +1032,8 @@ router.post("/products/:productId/social-posts", async (req, res): Promise<void>
     platforms: z.array(z.string()).default(["facebook", "google"]),
     autoReschedule: z.boolean().default(true),
     scheduledAt: z.string().datetime().optional().nullable(),
-    productImageUrl: z.preprocess(v => (!v || v === "" ? null : v), z.string().url().optional().nullable()),
-    websiteUrl: z.preprocess(v => (!v || v === "" ? null : v), z.string().url().optional().nullable()),
+    productImageUrl: z.preprocess(v => { if (!v || v === "") return null; try { new URL(v as string); return v; } catch { return null; } }, z.string().url().optional().nullable()),
+    websiteUrl: z.preprocess(v => { if (!v || v === "") return null; try { new URL(v as string); return v; } catch { return null; } }, z.string().url().optional().nullable()),
     season: z.enum(["spring", "summer", "autumn", "winter"]).optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -1075,8 +1075,8 @@ router.patch("/social-posts/:id", async (req, res): Promise<void> => {
     status: z.enum(["draft", "scheduled", "published", "failed"]).optional(),
     scheduledAt: z.string().datetime().optional().nullable(),
     newActivity: z.boolean().optional(),
-    productImageUrl: z.preprocess(v => (!v || v === "" ? null : v), z.string().url().optional().nullable()),
-    websiteUrl: z.preprocess(v => (!v || v === "" ? null : v), z.string().url().optional().nullable()),
+    productImageUrl: z.preprocess(v => { if (!v || v === "") return null; try { new URL(v as string); return v; } catch { return null; } }, z.string().url().optional().nullable()),
+    websiteUrl: z.preprocess(v => { if (!v || v === "") return null; try { new URL(v as string); return v; } catch { return null; } }, z.string().url().optional().nullable()),
     season: z.enum(["spring", "summer", "autumn", "winter"]).optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
