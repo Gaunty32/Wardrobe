@@ -3290,6 +3290,55 @@ export async function refreshProductIssues(): Promise<void> {
     }
   }
 
+  // ── O294 Deister Electronics: revert premature full-dispatch ─────────────────
+  // Items 1315 (Polo M×2), 1395 (QZ Sweatshirt XL×2), 1403 (Winter Jacket 2XL×1)
+  // were marked dispatched before being received from Orn (PO-2026-07-2842, id=114).
+  // Due dates: 1403→15 Sep 2026, 1315→21 Oct 2026, 1395→20 Sep 2026.
+  {
+    const flagKey = "deister_o294_partial_dispatch_fix_v1";
+    const already = await db.execute(sql`SELECT 1 FROM _migration_flags WHERE name = ${flagKey}`);
+    if ((already.rows as any[]).length === 0) {
+      try {
+        // 1. Reset the three un-shipped items (order_items has no updated_at column)
+        await db.execute(sql`UPDATE order_items SET dispatched_at = NULL, stock_status = 'allocated' WHERE id = 1315`);
+        await db.execute(sql`UPDATE order_items SET dispatched_at = NULL, stock_status = 'allocated' WHERE id = 1395`);
+        await db.execute(sql`UPDATE order_items SET dispatched_at = NULL, stock_status = 'allocated' WHERE id = 1403`);
+        // 2. Revert order to part_shipped
+        await db.execute(sql`
+          UPDATE orders
+          SET status = 'part_shipped', updated_at = NOW()
+          WHERE id = 316 AND status = 'shipped'
+        `);
+        // 3. Revert PO to ordered so backorder map can surface due dates
+        await db.execute(sql`
+          UPDATE purchase_orders
+          SET status = 'ordered', updated_at = NOW()
+          WHERE id = 114 AND status = 'delivered'
+        `);
+        // 4. Set due dates and clear delivered qty on the three PO lines
+        await db.execute(sql`
+          UPDATE purchase_order_items
+          SET estimated_due_date = '2026-10-21T00:00:00Z', quantity_delivered = 0, updated_at = NOW()
+          WHERE order_item_id = 1315
+        `);
+        await db.execute(sql`
+          UPDATE purchase_order_items
+          SET estimated_due_date = '2026-09-20T00:00:00Z', quantity_delivered = 0, updated_at = NOW()
+          WHERE order_item_id = 1395
+        `);
+        await db.execute(sql`
+          UPDATE purchase_order_items
+          SET estimated_due_date = '2026-09-15T00:00:00Z', quantity_delivered = 0, updated_at = NOW()
+          WHERE order_item_id = 1403
+        `);
+        await db.execute(sql`INSERT INTO _migration_flags (name) VALUES (${flagKey}) ON CONFLICT DO NOTHING`);
+        console.log("[startup] O294 Deister: reverted to part_shipped, 3 items unshipped, PO 114 reopened with due dates");
+      } catch (err) {
+        console.warn("[startup] O294 Deister fix failed:", (err as Error).message);
+      }
+    }
+  }
+
   // ── Restore WordPress photo URLs that were incorrectly cleared ───────────────
   {
     const flagKey = "restored_wordpress_team_photo_urls_v1";
