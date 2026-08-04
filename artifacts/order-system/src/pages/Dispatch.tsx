@@ -347,9 +347,19 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         </div>
       )}
       {order.status === "part_shipped" && !order.productionComplete && (
-        <div className="mx-5 mb-3 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-          <Package className="w-4 h-4 flex-shrink-0" />
-          <span><span className="font-medium">Part dispatched</span> — {order.items.filter(i => !i.dispatchedAt).length} item line(s) awaiting delivery before follow-up shipment.</span>
+        <div className="mx-5 mb-3 flex items-center justify-between gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+          <div className="flex items-center gap-2">
+            <Package className="w-4 h-4 flex-shrink-0" />
+            <span><span className="font-medium">Part dispatched</span> — {order.items.filter(i => !i.dispatchedAt).length} item line(s) awaiting delivery before follow-up shipment.</span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs gap-1 border-amber-300 text-amber-800 hover:bg-amber-100 flex-shrink-0"
+            onClick={() => openDeliveryNote(order.id, order.shippingMethod, order.items.filter(i => i.dispatchedAt).map(i => i.id))}
+          >
+            <FileText className="w-3 h-3" /> Delivery Note
+          </Button>
         </div>
       )}
       {order.status !== "part_shipped" && order.productionComplete && (
