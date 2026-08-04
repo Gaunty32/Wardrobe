@@ -226,6 +226,52 @@ function buildMappedRow(rawRow: string[], mappings: ColumnMapping[]): MappedRow 
   return { firstName, lastName, employeeNumber, jobTitle, email, phone, teamName, managerName, notes, sizes, deliveryAddressLabel, roleName };
 }
 
+// ─── Duplicate detection ──────────────────────────────────────────────────────
+
+type RowStatus =
+  | { kind: "new" }
+  | { kind: "update"; matchName: string }
+  | { kind: "duplicate"; matchName: string };
+
+function normName(s: string) {
+  return s.toLowerCase().replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function classifyRow(row: MappedRow, existingEmployees: any[]): RowStatus {
+  if (!existingEmployees.length) return { kind: "new" };
+  const rowFull = normName([row.firstName, row.lastName].filter(Boolean).join(" "));
+
+  // 1. Exact employee number match → definite update
+  if (row.employeeNumber) {
+    const m = existingEmployees.find(e => e.employeeNumber === row.employeeNumber);
+    if (m) return { kind: "update", matchName: [m.firstName, m.lastName].filter(Boolean).join(" ") };
+  }
+
+  // 2. Exact name match → update
+  const exact = existingEmployees.find(e =>
+    normName([e.firstName, e.lastName].filter(Boolean).join(" ")) === rowFull
+  );
+  if (exact) return { kind: "update", matchName: [exact.firstName, exact.lastName].filter(Boolean).join(" ") };
+
+  // 3. Fuzzy word-overlap → potential duplicate
+  const rowWords = rowFull.split(" ").filter(Boolean);
+  let bestScore = 0;
+  let bestMatch: any = null;
+  for (const e of existingEmployees) {
+    const eName = normName([e.firstName, e.lastName].filter(Boolean).join(" "));
+    const eWords = eName.split(" ").filter(Boolean);
+    if (!rowWords.length || !eWords.length) continue;
+    const shared = rowWords.filter(w => eWords.includes(w)).length;
+    const score = shared / Math.max(rowWords.length, eWords.length);
+    if (score > bestScore) { bestScore = score; bestMatch = e; }
+  }
+  if (bestScore >= 0.6 && bestMatch) {
+    return { kind: "duplicate", matchName: [bestMatch.firstName, bestMatch.lastName].filter(Boolean).join(" ") };
+  }
+
+  return { kind: "new" };
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -252,6 +298,10 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
   const [selectedFinishId, setSelectedFinishId] = useState<number | null>(null);
   const [finishes, setFinishes] = useState<Finish[]>([]);
   const [loadingFinishes, setLoadingFinishes] = useState(false);
+  // Duplicate detection
+  const [existingEmployees, setExistingEmployees] = useState<any[]>([]);
+  const [loadingExisting, setLoadingExisting] = useState(false);
+  const [skippedRowIndices, setSkippedRowIndices] = useState<Set<number>>(new Set());
 
   const reset = () => {
     setStep("upload");
@@ -265,6 +315,9 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
     setCreateOrder(false);
     setSelectedFinishId(null);
     setFinishes([]);
+    setExistingEmployees([]);
+    setLoadingExisting(false);
+    setSkippedRowIndices(new Set());
   };
 
   const handleClose = (v: boolean) => {
@@ -391,10 +444,12 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
   // Data rows based on current settings
   const headers = sheet ? (sheet.rawRows[headerRowIndex] ?? []).map((c, i) => String(c).trim() || colLetter(i)) : [];
   const dataRows = sheet ? sheet.rawRows.slice(dataStartIndex).filter(r => r.some(c => String(c).trim())) : [];
-  const previewRows = dataRows.slice(0, 5);
-  const mappedPreview = previewRows.map(r => buildMappedRow(r, mappings)).filter(Boolean) as MappedRow[];
   const totalDataRows = dataRows.length;
-  const validMappedRows = dataRows.map(r => buildMappedRow(r, mappings)).filter(Boolean).length;
+  const allMappedWithIdx = dataRows
+    .map((r, i) => ({ row: buildMappedRow(r, mappings), idx: i }))
+    .filter((x): x is { row: MappedRow; idx: number } => x.row !== null);
+  const validMappedRows = allMappedWithIdx.length;
+  const importableCount = allMappedWithIdx.filter(x => !skippedRowIndices.has(x.idx)).length;
 
   const hasNameMapping = mappings.some(m => ["full_name", "first_name"].includes(m.type));
   const hasSizeColumns = mappings.some(m => m.type === "size");
@@ -417,6 +472,16 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
 
   const firstSizeLabel = mappings.find(m => m.type === "size")?.sizeLabel ?? "Size";
 
+  // Fetch existing employees when entering the preview step (for duplicate detection)
+  useEffect(() => {
+    if (step !== "preview") return;
+    setLoadingExisting(true);
+    apiFetch(`/customers/${customerId}/employees`)
+      .then((data: any) => setExistingEmployees(data ?? []))
+      .catch(() => setExistingEmployees([]))
+      .finally(() => setLoadingExisting(false));
+  }, [step, customerId]);
+
   // Fetch finishes when entering the order step
   useEffect(() => {
     if (step !== "order") return;
@@ -434,9 +499,9 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
   const doImport = async () => {
     setLoading(true);
     try {
-      const rows = dataRows
-        .map(r => buildMappedRow(r, mappings))
-        .filter(Boolean) as MappedRow[];
+      const rows = allMappedWithIdx
+        .filter(x => !skippedRowIndices.has(x.idx))
+        .map(x => x.row);
 
       const orderOptions = (createOrder && selectedFinishId)
         ? { finishId: selectedFinishId, sizeLabel: firstSizeLabel }
@@ -661,59 +726,116 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
           {/* ── Step 3: Preview ── */}
           {step === "preview" && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Showing first {Math.min(5, mappedPreview.length)} of <strong>{validMappedRows}</strong> rows that will be imported.
-                </p>
-                <p className="text-xs text-muted-foreground">{totalDataRows - validMappedRows > 0 && `${totalDataRows - validMappedRows} row(s) skipped (no name)`}</p>
-              </div>
               {(() => {
-                const hasEmpNum = mappedPreview.some(r => r.employeeNumber);
-                const hasTeam = mappedPreview.some(r => r.teamName);
-                const hasManager = mappedPreview.some(r => r.managerName);
-                const hasJobTitle = mappedPreview.some(r => r.jobTitle);
-                const hasEmail = mappedPreview.some(r => r.email);
-                const hasDeliveryAddress = mappedPreview.some(r => r.deliveryAddressLabel);
-                const hasRole = mappedPreview.some(r => r.roleName);
+                const statuses = allMappedWithIdx.map(({ row, idx }) => ({
+                  row, idx, status: loadingExisting ? { kind: "new" as const } : classifyRow(row, existingEmployees),
+                }));
+                const nDuplicates = statuses.filter(s => s.status.kind === "duplicate" && !skippedRowIndices.has(s.idx)).length;
+                const nSkipped = skippedRowIndices.size;
+                const hasEmpNum = statuses.some(s => s.row.employeeNumber);
+                const hasTeam = statuses.some(s => s.row.teamName);
+                const hasManager = statuses.some(s => s.row.managerName);
+                const hasJobTitle = statuses.some(s => s.row.jobTitle);
+                const hasEmail = statuses.some(s => s.row.email);
+                const hasDeliveryAddress = statuses.some(s => s.row.deliveryAddressLabel);
+                const hasRole = statuses.some(s => s.row.roleName);
                 const dash = <span className="text-muted-foreground/40">—</span>;
+
                 return (
-                  <div className="border border-border rounded-lg overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead className="bg-muted/40 border-b border-border">
-                          <tr>
-                            <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Name</th>
-                            {hasEmpNum && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Emp No.</th>}
-                            {hasRole && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Role</th>}
-                            {hasDeliveryAddress && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Delivery Address</th>}
-                            {hasTeam && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Team</th>}
-                            {hasManager && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Manager</th>}
-                            {hasJobTitle && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Job Title</th>}
-                            {hasEmail && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Email</th>}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                          {mappedPreview.map((row, i) => (
-                            <tr key={i} className="hover:bg-muted/20">
-                              <td className="px-3 py-2 font-medium">{[row.firstName, row.lastName].filter(Boolean).join(" ")}</td>
-                              {hasEmpNum && <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{row.employeeNumber || dash}</td>}
-                              {hasRole && <td className="px-3 py-2 text-muted-foreground">{row.roleName || dash}</td>}
-                              {hasDeliveryAddress && <td className="px-3 py-2 text-muted-foreground">{row.deliveryAddressLabel || dash}</td>}
-                              {hasTeam && <td className="px-3 py-2 text-muted-foreground">{row.teamName || dash}</td>}
-                              {hasManager && <td className="px-3 py-2 text-muted-foreground">{row.managerName || dash}</td>}
-                              {hasJobTitle && <td className="px-3 py-2 text-muted-foreground">{row.jobTitle || dash}</td>}
-                              {hasEmail && <td className="px-3 py-2 text-muted-foreground">{row.email || dash}</td>}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  <>
+                    {/* Summary bar */}
+                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                      {loadingExisting ? (
+                        <span className="text-muted-foreground flex items-center gap-1.5"><Loader2 className="w-3 h-3 animate-spin" /> Checking for duplicates…</span>
+                      ) : (
+                        <>
+                          <span className="text-muted-foreground"><strong>{importableCount}</strong> will be imported</span>
+                          {nDuplicates > 0 && (
+                            <span className="text-amber-600 font-medium flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {nDuplicates} possible duplicate{nDuplicates > 1 ? "s" : ""} — review below</span>
+                          )}
+                          {nSkipped > 0 && <span className="text-muted-foreground">{nSkipped} skipped</span>}
+                          {totalDataRows - validMappedRows > 0 && <span className="text-muted-foreground">{totalDataRows - validMappedRows} row(s) ignored (no name)</span>}
+                        </>
+                      )}
                     </div>
-                  </div>
+
+                    {/* Table */}
+                    <div className="border border-border rounded-lg overflow-hidden">
+                      <div className="overflow-x-auto max-h-[380px] overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/40 border-b border-border sticky top-0 z-10">
+                            <tr>
+                              <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Name</th>
+                              {hasEmpNum && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Emp No.</th>}
+                              {hasRole && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Role</th>}
+                              {hasDeliveryAddress && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Delivery Address</th>}
+                              {hasTeam && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Team</th>}
+                              {hasManager && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Manager</th>}
+                              {hasJobTitle && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Job Title</th>}
+                              {hasEmail && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Email</th>}
+                              <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {statuses.map(({ row, idx, status }) => {
+                              const isSkipped = skippedRowIndices.has(idx);
+                              const isDuplicate = status.kind === "duplicate";
+                              const rowCls = isSkipped
+                                ? "bg-muted/30 opacity-50"
+                                : isDuplicate
+                                  ? "bg-amber-50/60"
+                                  : "hover:bg-muted/20";
+                              return (
+                                <tr key={idx} className={rowCls}>
+                                  <td className="px-3 py-2 font-medium">{[row.firstName, row.lastName].filter(Boolean).join(" ")}</td>
+                                  {hasEmpNum && <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{row.employeeNumber || dash}</td>}
+                                  {hasRole && <td className="px-3 py-2 text-muted-foreground">{row.roleName || dash}</td>}
+                                  {hasDeliveryAddress && <td className="px-3 py-2 text-muted-foreground">{row.deliveryAddressLabel || dash}</td>}
+                                  {hasTeam && <td className="px-3 py-2 text-muted-foreground">{row.teamName || dash}</td>}
+                                  {hasManager && <td className="px-3 py-2 text-muted-foreground">{row.managerName || dash}</td>}
+                                  {hasJobTitle && <td className="px-3 py-2 text-muted-foreground">{row.jobTitle || dash}</td>}
+                                  {hasEmail && <td className="px-3 py-2 text-muted-foreground">{row.email || dash}</td>}
+                                  <td className="px-3 py-2 whitespace-nowrap">
+                                    {isSkipped ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSkippedRowIndices(prev => { const n = new Set(prev); n.delete(idx); return n; })}
+                                        className="text-[11px] text-muted-foreground underline hover:text-foreground"
+                                      >Undo skip</button>
+                                    ) : isDuplicate ? (
+                                      <div className="flex items-center gap-2">
+                                        <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
+                                          <AlertCircle className="w-3 h-3 shrink-0" />
+                                          Similar to {(status as { kind: "duplicate"; matchName: string }).matchName}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setSkippedRowIndices(prev => new Set([...prev, idx]))}
+                                          className="text-[11px] text-muted-foreground border border-border rounded px-1.5 py-0.5 hover:bg-muted"
+                                        >Skip</button>
+                                      </div>
+                                    ) : status.kind === "update" ? (
+                                      <span className="inline-flex items-center gap-1 text-blue-600 font-medium">
+                                        <Check className="w-3 h-3" /> Update
+                                      </span>
+                                    ) : (
+                                      <span className="text-green-700 font-medium">New</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">
+                      Employees matched by <strong>Employee No.</strong> or exact name will be <strong>updated</strong>. Unmatched rows will be <strong>created</strong>. Teams and managers not yet in the system will be linked automatically.
+                    </div>
+                  </>
                 );
               })()}
-              <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">
-                Employees matched by <strong>Employee No.</strong> will be <strong>updated</strong>. Unmatched rows will be <strong>created</strong>. Teams and managers not yet in the system will be linked automatically.
-              </div>
             </div>
           )}
 
@@ -889,26 +1011,26 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
             )}
             {step === "preview" && (
               hasSizeColumns ? (
-                <Button onClick={() => setStep("order")} disabled={validMappedRows === 0} className="gap-1.5">
+                <Button onClick={() => setStep("order")} disabled={importableCount === 0} className="gap-1.5">
                   Next <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               ) : (
-                <Button onClick={doImport} disabled={loading || validMappedRows === 0} className="gap-1.5">
-                  {loading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</> : <><Check className="w-3.5 h-3.5" /> Import {validMappedRows} rows</>}
+                <Button onClick={doImport} disabled={loading || importableCount === 0} className="gap-1.5">
+                  {loading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</> : <><Check className="w-3.5 h-3.5" /> Import {importableCount} rows</>}
                 </Button>
               )
             )}
             {step === "order" && (
               <Button
                 onClick={doImport}
-                disabled={loading || validMappedRows === 0 || (createOrder && !selectedFinishId)}
+                disabled={loading || importableCount === 0 || (createOrder && !selectedFinishId)}
                 className="gap-1.5"
               >
                 {loading
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</>
                   : createOrder
                     ? <><ShoppingCart className="w-3.5 h-3.5" /> Import & Create Order</>
-                    : <><Check className="w-3.5 h-3.5" /> Import {validMappedRows} rows</>
+                    : <><Check className="w-3.5 h-3.5" /> Import {importableCount} rows</>
                 }
               </Button>
             )}

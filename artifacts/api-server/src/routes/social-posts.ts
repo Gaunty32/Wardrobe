@@ -1146,20 +1146,83 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const rows = await db.execute(sql`SELECT * FROM social_posts WHERE id = ${id}`);
-  const post = (rows.rows[0] ?? rows) as any;
-  if (!post) { res.status(404).json({ error: "Post not found" }); return; }
+  const post = (rows.rows[0] ?? (rows as any)) as any;
+  if (!post?.id) { res.status(404).json({ error: "Post not found" }); return; }
 
-  // Queue the post for the next available slot (every-other-day cadence, no same-category
-  // within 7 days). The scheduler handles the actual publish when the time comes.
-  const slotDate = await pickNextPublishSlot(post.product_id);
-  await db.execute(sql`
-    UPDATE social_posts
-    SET status = 'scheduled', scheduled_at = ${slotDate.toISOString()},
-        new_activity = FALSE, updated_at = NOW()
-    WHERE id = ${id}
-  `);
+  const fbSettings = await getFbSettings();
+  const gbpStatus = await getGbpStatus();
+  const platforms: string[] = post.platforms ?? ["facebook", "google"];
+  const imageUrl: string | null = post.product_image_url ?? null;
+  const postWebsiteUrl: string | null = post.website_url ?? null;
 
-  res.json({ ok: true, queued: true, scheduledAt: slotDate.toISOString() });
+  const [productRow] = (await db.execute(sql`SELECT name FROM products WHERE id = ${post.product_id}`)).rows as any[];
+  const productName = productRow?.name ?? `Product #${post.product_id}`;
+
+  let failed = false; let errMsg = "";
+  let fbPostId: string | null = null; let gbpPostName: string | null = null;
+  const results: Record<string, { ok: boolean; error?: string }> = {};
+
+  if (platforms.includes("facebook") && fbSettings) {
+    let message = post.facebook_content;
+    if (post.hashtags) message += `\n\n${post.hashtags.split(",").map((h: string) => `#${h.trim()}`).join(" ")}`;
+    const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message, imageUrl, postWebsiteUrl);
+    results.facebook = { ok: fbResult.ok, error: fbResult.error };
+    if (fbResult.ok) fbPostId = fbResult.postId ?? null;
+    else {
+      failed = true; errMsg = fbResult.error ?? "Facebook error";
+      await notifySocialPostFailure(post.id, productName, "Facebook", errMsg);
+    }
+  } else if (platforms.includes("facebook") && !fbSettings) {
+    results.facebook = { ok: false, error: "Facebook not configured" };
+    failed = true; errMsg = "Facebook not configured in Settings → Social Media";
+  }
+
+  if (platforms.includes("google") && gbpStatus.locationName) {
+    let gbpToken: string | null = null;
+    try { gbpToken = await getGbpAccessToken(); } catch (e: any) { console.warn(`[social] GBP token error: ${e.message}`); }
+    if (gbpToken) {
+      const googleMessage = post.google_content || post.facebook_content;
+      const gbpResult = await publishGbpPost(gbpStatus.locationName, gbpToken, googleMessage, imageUrl);
+      results.google = { ok: gbpResult.ok, error: gbpResult.error };
+      if (gbpResult.ok) gbpPostName = gbpResult.postName ?? null;
+      else {
+        console.warn(`[social] GBP post ${post.id} failed: ${gbpResult.error}`);
+        await notifySocialPostFailure(post.id, productName, "Google Business", gbpResult.error ?? "GBP error");
+      }
+    } else {
+      results.google = { ok: false, error: "GBP token unavailable" };
+    }
+  }
+
+  const newStatus = failed ? "failed" : "published";
+  await db.execute(sql.raw(`
+    UPDATE social_posts SET
+      status = '${newStatus}',
+      published_at = ${failed ? "NULL" : `'${new Date().toISOString()}'`},
+      error_message = ${failed ? `'${errMsg.replace(/'/g, "''")}'` : "NULL"},
+      fb_post_id = ${fbPostId ? `'${fbPostId}'` : "NULL"},
+      gbp_post_name = ${gbpPostName ? `'${gbpPostName}'` : "NULL"},
+      updated_at = NOW()
+    WHERE id = ${post.id}
+  `));
+
+  // Auto-reschedule next post if enabled and publish succeeded
+  if (!failed && post.auto_reschedule) {
+    const nextDate = await pickRescheduleDate(post.product_id);
+    const nextSeason = seasonFromDate(nextDate);
+    const pArr = platforms.map((p: string) => `'${p}'`).join(",");
+    const fresh = await generatePostsForProduct(post.product_id, nextSeason);
+    const fbContent = (fresh?.facebookContent || post.facebook_content).replace(/'/g, "''");
+    const ggContent = (fresh?.googleContent || post.google_content).replace(/'/g, "''");
+    const htContent = (fresh?.hashtags || post.hashtags).replace(/'/g, "''");
+    await db.execute(sql.raw(`
+      INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
+      VALUES (${post.product_id}, '${fbContent}', '${ggContent}', '${htContent}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${nextSeason}')
+    `));
+  }
+
+  console.log(`[social] Manual publish post ${post.id} → ${newStatus}`, results);
+  res.json({ ok: !failed, status: newStatus, results, fbPostId, gbpPostName });
 });
 
 // ── Schedule a post (random within 30 days) ───────────────────────────────────
