@@ -293,6 +293,25 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
       );
     }
 
+    // Auto-post each order to Xero
+    for (const id of orderIds) {
+      try {
+        const xeroPosted = await postInvoiceToXero(id);
+        if ((xeroPosted as any).skippedZeroValue) {
+          await logOrderAction(id, "Skipped Xero — zero value", getActor(req), "Invoice total is £0; not posted to Xero");
+        } else if (xeroPosted.xeroInvoiceId) {
+          await logOrderAction(id, "Posted to Xero", getActor(req), `Xero invoice ID: ${xeroPosted.xeroInvoiceId}`);
+        }
+      } catch (xeroErr) {
+        const xeroMsg = xeroErr instanceof Error ? xeroErr.message : String(xeroErr);
+        const notConnected = xeroMsg.includes("not connected") || xeroMsg.includes("No Xero tenant");
+        if (!notConnected) {
+          console.error(`[xero] Auto-post failed for consolidated order ${id}:`, xeroMsg);
+          await logOrderAction(id, "Xero post failed", getActor(req), xeroMsg).catch(() => {});
+        }
+      }
+    }
+
     res.json({ ok: true, sentTo: customerEmail, invoiceRef });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Failed to send consolidated invoice" });
@@ -463,7 +482,7 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
       }
     }
 
-    // Auto-post to Xero if connected (non-blocking — best effort)
+    // Auto-post to Xero
     let xeroResult: { xeroInvoiceId?: string; xeroInvoiceStatus?: string } = {};
     try {
       const xeroPosted = await postInvoiceToXero(idParse.data);
@@ -473,8 +492,15 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
       } else if (xeroPosted.xeroInvoiceId) {
         await logOrderAction(idParse.data, "Posted to Xero", getActor(req), `Xero invoice ID: ${xeroPosted.xeroInvoiceId}`);
       }
-    } catch {
-      // Xero not connected or customer not linked — silently skip
+    } catch (xeroErr) {
+      const xeroMsg = xeroErr instanceof Error ? xeroErr.message : String(xeroErr);
+      const notConnected = xeroMsg.includes("not connected") || xeroMsg.includes("No Xero tenant");
+      if (!notConnected) {
+        // Real API failure — log it visibly so staff know to retry
+        console.error(`[xero] Auto-post failed for order ${idParse.data}:`, xeroMsg);
+        await logOrderAction(idParse.data, "Xero post failed", getActor(req), xeroMsg).catch(() => {});
+      }
+      // Either way don't fail the invoice send
     }
 
     res.json({ ok: true, sentTo: result.sentTo, ...xeroResult });
@@ -495,8 +521,28 @@ router.post("/invoices/:orderId/mark-sent", async (req, res): Promise<void> => {
     await db.update(ordersTable)
       .set({ invoiceEmailSentAt: new Date(), invoiceScheduledSendAt: null, updatedAt: new Date() })
       .where(eq(ordersTable.id, idParse.data));
-    await logOrderAction(idParse.data, "Invoice marked as sent", getActor(req), "Moved to Xero queue without sending email");
-    res.json({ ok: true });
+    await logOrderAction(idParse.data, "Invoice marked as sent (no email)", getActor(req), "Email skipped — posting to Xero");
+
+    // Auto-post to Xero
+    let xeroResult: { xeroInvoiceId?: string; xeroInvoiceStatus?: string } = {};
+    try {
+      const xeroPosted = await postInvoiceToXero(idParse.data);
+      xeroResult = { xeroInvoiceId: xeroPosted.xeroInvoiceId, xeroInvoiceStatus: xeroPosted.xeroInvoiceStatus };
+      if ((xeroPosted as any).skippedZeroValue) {
+        await logOrderAction(idParse.data, "Skipped Xero — zero value", getActor(req), "Invoice total is £0; not posted to Xero");
+      } else if (xeroPosted.xeroInvoiceId) {
+        await logOrderAction(idParse.data, "Posted to Xero", getActor(req), `Xero invoice ID: ${xeroPosted.xeroInvoiceId}`);
+      }
+    } catch (xeroErr) {
+      const xeroMsg = xeroErr instanceof Error ? xeroErr.message : String(xeroErr);
+      const notConnected = xeroMsg.includes("not connected") || xeroMsg.includes("No Xero tenant");
+      if (!notConnected) {
+        console.error(`[xero] Auto-post failed for order ${idParse.data}:`, xeroMsg);
+        await logOrderAction(idParse.data, "Xero post failed", getActor(req), xeroMsg).catch(() => {});
+      }
+    }
+
+    res.json({ ok: true, ...xeroResult });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Failed to mark as sent" });
   }
