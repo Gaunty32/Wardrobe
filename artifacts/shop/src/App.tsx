@@ -22,6 +22,7 @@ const FAQ              = lazy(() => import('@/pages/FAQ'));
 const BulkBuyBundles   = lazy(() => import('@/pages/BulkBuyBundles'));
 const Reviews          = lazy(() => import('@/pages/Reviews'));
 const KnowledgeCentre  = lazy(() => import('@/pages/KnowledgeCentre'));
+const KnowledgeArticle = lazy(() => import('@/pages/KnowledgeArticle'));
 const Login            = lazy(() => import('@/pages/Login'));
 const Account          = lazy(() => import('@/pages/Account'));
 const Personalisation  = lazy(() => import('@/pages/Personalisation'));
@@ -73,6 +74,7 @@ function Router() {
           <Route path="/shop/knowledge-centre">{() => <Redirect to="/knowledge-centre" />}</Route>
           <Route path="/shop">{() => <Redirect to="/products" />}</Route>
           <Route path="/shop/:rest*">{(p: any) => <Redirect to={`/${p.rest ?? ''}`} />}</Route>
+          <Route path="/:slug" component={KnowledgeArticle} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>

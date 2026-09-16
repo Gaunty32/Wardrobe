@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import multer from "multer";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -7,6 +7,7 @@ import { logger } from "../lib/logger.js";
 import { sendEmail } from "../services/email.js";
 import { fireWorkflow } from "../services/workflow-engine.js";
 import { getUncachableStripeClient, getStripePublishableKey } from "../services/stripeClient.js";
+import { getSoroArticle, getSoroArticles } from "../services/soro-articles.js";
 
 const router: IRouter = Router();
 
@@ -1117,61 +1118,8 @@ let _blogPostsRefreshing = false;
 const BLOG_POSTS_TTL_MS = 60 * 60 * 1000; // 1 hour server-side cache
 
 async function fetchAndCacheBlogPosts(): Promise<any[]> {
-  const postsUrl =
-    "https://www.selectuniforms.co.uk/wp-json/wp/v2/posts" +
-    "?per_page=9&_fields=id,title,excerpt,date,link,slug,featured_media,_embedded&_embed=wp:featuredmedia";
-  const wpRes = await fetch(postsUrl, { signal: AbortSignal.timeout(8000) });
-  if (!wpRes.ok) throw new Error(`WordPress API error ${wpRes.status}`);
-  const posts: any[] = await wpRes.json();
-
-  // Try to pull image URLs from _embedded first
-  const mediaMap: Record<number, string> = {};
-  for (const p of posts) {
-    const src = p._embedded?.["wp:featuredmedia"]?.[0]?.source_url;
-    if (src && p.featured_media) mediaMap[p.featured_media] = src;
-  }
-
-  // If _embedded didn't work, batch-fetch media separately (short timeout — non-blocking)
-  const missingIds = posts
-    .map((p: any) => p.featured_media)
-    .filter((id: any) => id && Number(id) > 0 && !mediaMap[id]);
-
-  if (missingIds.length > 0) {
-    try {
-      const mediaUrl =
-        "https://www.selectuniforms.co.uk/wp-json/wp/v2/media" +
-        `?include=${missingIds.join(",")}&per_page=${missingIds.length}`;
-      const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(5000) });
-      if (mediaRes.ok) {
-        const mediaItems: any[] = await mediaRes.json();
-        logger.info({ count: mediaItems.length, missingIds }, "[shop/blog-posts] batch media response");
-        for (const m of mediaItems) {
-          if (m.id && m.source_url) mediaMap[m.id] = m.source_url;
-        }
-      } else {
-        logger.warn({ status: mediaRes.status }, "[shop/blog-posts] batch media fetch failed");
-      }
-    } catch (e: any) {
-      logger.warn({ err: e?.message }, "[shop/blog-posts] batch media fetch threw");
-    }
-  }
-
-  const cleaned = posts.map((p: any) => {
-    const rawExcerpt: string = p.excerpt?.rendered ?? "";
-    const excerpt = rawExcerpt
-      .replace(/<[^>]+>/g, "")
-      .replace(/\[&hellip;\]/g, "…")
-      .replace(/&#8230;/g, "…")
-      .trim();
-    const title: string = (p.title?.rendered ?? "")
-      .replace(/&#8217;/g, "'")
-      .replace(/&#8211;/g, "–")
-      .replace(/&amp;/g, "&")
-      .trim();
-    const featuredImageUrl: string | null =
-      (p.featured_media && mediaMap[p.featured_media]) ? mediaMap[p.featured_media] : null;
-    return { id: p.id, title, excerpt, date: p.date, link: p.link, slug: p.slug, featuredImageUrl };
-  });
+  const articles = await getSoroArticles();
+  const cleaned = articles.map(({ content: _content, ...article }) => article);
 
   logger.info(
     { total: cleaned.length, withImage: cleaned.filter(p => p.featuredImageUrl).length },
@@ -1216,6 +1164,21 @@ router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
     res.status(502).json({ error: "Could not fetch blog posts" });
   } finally {
     _blogPostsRefreshing = false;
+  }
+});
+
+router.get("/shop/blog-posts/:slug", async (req: Request, res: Response): Promise<void> => {
+  try {
+    const article = await getSoroArticle(req.params.slug);
+    if (!article) {
+      res.status(404).json({ error: "Knowledge Centre article not found" });
+      return;
+    }
+    res.setHeader("Cache-Control", "public, max-age=900, stale-while-revalidate=3600");
+    res.json(article);
+  } catch (error) {
+    logger.warn({ err: error, slug: req.params.slug }, "[shop/blog-post] Failed to fetch Soro article");
+    res.status(502).json({ error: "Could not fetch Knowledge Centre article" });
   }
 });
 

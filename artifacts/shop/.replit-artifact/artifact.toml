@@ -7,7 +7,21 @@ router = "path"
 
 [[services]]
 name = "web"
-paths = [ "/" ]
+paths = [
+  "/",
+  "/company-clothing-portal-guide",
+  "/how-to-brand-work-trousers",
+  "/when-should-staff-wear-hi-vis",
+  "/safety-footwear-that-works-as-hard-as-your-team",
+  "/uniform-portal-software-review",
+  "/multi-site-workwear-rollout-case-study-uk-teams",
+  "/embroidered-fleece-jackets",
+  "/uniform-fabric-selection-workwear",
+  "/industrial-workwear-bundles",
+  "/in-house-embroidery-vs-outsourcing-workwear",
+  "/workwear-for-construction-teams",
+  "/when-should-companies-replace-uniforms"
+]
 localPort = 24349
 
 [services.development]

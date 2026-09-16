@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useSEO } from '@/hooks/useSEO';
-import { Calendar, ExternalLink, BookOpen } from 'lucide-react';
+import { Calendar, BookOpen } from 'lucide-react';
+import { Link } from 'wouter';
 
 interface BlogPost {
   id: number;
@@ -48,14 +49,12 @@ function BlogCard({ post }: { post: BlogPost }) {
         <p className="text-sm text-gray-500 leading-relaxed line-clamp-3 flex-1">
           {post.excerpt}
         </p>
-        <a
-          href={post.link}
-          target="_blank"
-          rel="noreferrer noopener"
+        <Link
+          href={`/${post.slug}`}
           className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary/80 transition-colors"
         >
-          Read more <ExternalLink className="w-3.5 h-3.5" />
-        </a>
+          Read more
+        </Link>
       </div>
     </article>
   );
@@ -139,16 +138,6 @@ export default function KnowledgeCentre() {
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {posts.map(post => <BlogCard key={post.id} post={post} />)}
-            </div>
-            <div className="text-center mt-10">
-              <a
-                href="https://www.selectuniforms.co.uk/latest-news/"
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-2 rounded-lg border border-primary px-6 py-2.5 text-sm font-semibold text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-              >
-                View all articles on our website <ExternalLink className="w-4 h-4" />
-              </a>
             </div>
           </>
         )}
